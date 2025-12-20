@@ -1,0 +1,120 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+/// *
+///  * ======================
+///  * COMPANY
+///  * ======================
+model Company {
+  id             String       @id @default(uuid())
+  nif            String       @unique
+  legalName      String
+  commercialName String
+  address        String
+  plan           String
+  createdAt      DateTime     @default(now())
+  updatedAt      DateTime     @updatedAt
+  branches       Branch[]
+  memberships    Membership[]
+  records        Record[]
+}
+
+/// *
+///  * ======================
+///  * BRANCH
+///  * ======================
+model Branch {
+  id           String       @id @default(uuid())
+  name         String
+  address      String
+  active       Boolean      @default(true)
+  tabletToken  String?      @unique
+  tabletActive Boolean      @default(true)
+  companyId    String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  company      Company      @relation(fields: [companyId], references: [id])
+  memberships  Membership[]
+  records      Record[]
+}
+
+/// *
+///  * ======================
+///  * USER (GLOBAL)
+///  * ======================
+model User {
+  id            String       @id @default(uuid())
+  name          String
+  firstSurname  String
+  secondSurname String?
+  dni           String
+  email         String       @unique
+  password      String
+  photoUrl      String?
+  active        Boolean      @default(true)
+  createdAt     DateTime     @default(now())
+  updatedAt     DateTime     @updatedAt
+  memberships   Membership[]
+  records       Record[]
+}
+
+/// *
+///  * ======================
+///  * MEMBERSHIP (CLAVE)
+///  * ======================
+model Membership {
+  id        String   @id @default(uuid())
+  userId    String
+  companyId String
+  branchId  String?
+  role      Role
+  active    Boolean  @default(true)
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  branch    Branch?  @relation(fields: [branchId], references: [id])
+  company   Company  @relation(fields: [companyId], references: [id])
+  user      User     @relation(fields: [userId], references: [id])
+  records   Record[]
+
+  @@unique([userId, companyId])
+}
+
+/// *
+///  * ======================
+///  * RECORDS
+///  * ======================
+model Record {
+  id           String     @id @default(uuid())
+  type         RecordType
+  userId       String
+  membershipId String
+  companyId    String
+  branchId     String
+  createdAt    DateTime   @default(now())
+  branch       Branch     @relation(fields: [branchId], references: [id])
+  company      Company    @relation(fields: [companyId], references: [id])
+  membership   Membership @relation(fields: [membershipId], references: [id])
+  user         User       @relation(fields: [userId], references: [id])
+}
+
+/// *
+///  * ======================
+///  * ENUMS
+///  * ======================
+enum Role {
+  SUPERADMIN
+  ADMIN_EMPRESA
+  ADMIN_SUCURSAL
+  EMPLEADO
+}
+
+enum RecordType {
+  IN
+  OUT
+}
