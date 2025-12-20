@@ -9,10 +9,12 @@ async function bootstrap() {
     allowedHeaders: ['Authorization', 'Content-Type'],
   });
 
-  const port = 3000;
+  // 🔑 CLAVE: usar el puerto que Render (o cualquier hosting) proporciona
+  const port = process.env.PORT || 3000;
+
   await app.listen(port);
 
-  console.log(`🚀 Application is running on: http://localhost:${port}`);
+  console.log(`🚀 Application is running on port ${port}`);
 }
 
 bootstrap();
