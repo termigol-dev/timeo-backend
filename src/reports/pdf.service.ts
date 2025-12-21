@@ -10,7 +10,7 @@ export class PdfService {
     to?: string;
     records: { type: string; timestamp: Date }[];
     totalHours: number;
-  }): PDFDocument {
+  }) {
     const doc = new PDFDocument({ margin: 40 });
 
     doc.fontSize(20).text('Timeshift', { align: 'center' });
@@ -18,6 +18,7 @@ export class PdfService {
 
     doc.fontSize(12).text(`Empresa: ${data.company}`);
     doc.text(`Empleado: ${data.employee}`);
+
     if (data.from || data.to) {
       doc.text(`Periodo: ${data.from || '—'} → ${data.to || '—'}`);
     }
