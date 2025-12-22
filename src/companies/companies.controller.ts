@@ -2,9 +2,10 @@ import {
   Controller,
   Get,
   Post,
-  Body,
+  Param,
   Req,
   UseGuards,
+  NotFoundException,
 } from '@nestjs/common';
 import { CompaniesService } from './companies.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
@@ -17,24 +18,23 @@ import { Role } from '@prisma/client';
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
-  /**
-   * 📌 LISTAR EMPRESAS
-   * - SUPERADMIN → todas
-   * - ADMIN_EMPRESA → solo las suyas
-   */
+  // LISTADO
   @Get()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   findAll(@Req() req) {
     return this.companiesService.findAll(req.user);
   }
 
-  /**
-   * 📌 CREAR EMPRESA
-   * - SOLO SUPERADMIN
-   */
-  @Post()
-  @Roles(Role.SUPERADMIN)
-  create(@Body() body: any) {
-    return this.companiesService.create(body);
+  // PERFIL DE EMPRESA 👇 (ESTO FALTABA)
+  @Get(':id')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  async findOne(@Param('id') id: string, @Req() req) {
+    const company = await this.companiesService.findOne(id, req.user);
+  if (!company) {
+    throw new NotFoundException('Empresa no encontrada');
+  }
+
+  return company;
+
   }
 }

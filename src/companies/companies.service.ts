@@ -1,4 +1,8 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+  NotFoundException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 
@@ -6,18 +10,13 @@ import { Role } from '@prisma/client';
 export class CompaniesService {
   constructor(private prisma: PrismaService) {}
 
-  /**
-   * 📌 LISTAR EMPRESAS
-   */
   async findAll(user: any) {
-    // SUPERADMIN → TODAS las empresas
     if (user.role === Role.SUPERADMIN) {
       return this.prisma.company.findMany({
         orderBy: { createdAt: 'desc' },
       });
     }
 
-    // ADMIN_EMPRESA → solo empresas donde tiene membership activa
     return this.prisma.company.findMany({
       where: {
         memberships: {
@@ -31,18 +30,35 @@ export class CompaniesService {
     });
   }
 
-  /**
-   * 📌 CREAR EMPRESA
-   */
-  async create(data: any) {
-    return this.prisma.company.create({
-      data: {
-        nif: data.nif,
-        legalName: data.legalName,
-        commercialName: data.commercialName,
-        address: data.address,
-        plan: data.plan ?? 'BASIC',
+  async findOne(companyId: string, user: any) {
+    const company = await this.prisma.company.findUnique({
+      where: { id: companyId },
+    });
+
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
+    // SUPERADMIN → acceso total
+    if (user.role === Role.SUPERADMIN) {
+      return company;
+    }
+
+    // ADMIN_EMPRESA → comprobar membership
+    const membership = await this.prisma.membership.findFirst({
+      where: {
+        companyId,
+        userId: user.id,
+        active: true,
       },
     });
+
+    if (!membership) {
+      throw new ForbiddenException(
+        'No tienes acceso a esta empresa',
+      );
+    }
+
+    return company;
   }
 }
