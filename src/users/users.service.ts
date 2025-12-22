@@ -7,6 +7,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
+/* ───────── ROLE LEVEL ───────── */
+
 function roleLevel(role: Role) {
   return {
     SUPERADMIN: 4,
@@ -20,31 +22,39 @@ function roleLevel(role: Role) {
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  /* ───────── PERFIL ───────── */
+  /* ───────── PERFIL (CLAVE PARA FRONTEND) ───────── */
 
   async getProfile(userId: string) {
-    return this.prisma.user.findUnique({
+    const user = await this.prisma.user.findUnique({
       where: { id: userId },
-      select: {
-        id: true,
-        name: true,
-        firstSurname: true,
-        secondSurname: true,
-        dni: true,
-        email: true,
-        photoUrl: true,
-        active: true,
+      include: {
         memberships: {
-          select: {
-            id: true,
-            role: true,
-            companyId: true,
-            branchId: true,
-            active: true,
-          },
+          where: { active: true },
         },
       },
     });
+
+    if (!user || user.memberships.length === 0) {
+      throw new NotFoundException();
+    }
+
+    const membership = user.memberships[0];
+
+    return {
+      id: user.id,
+      name: user.name,
+      firstSurname: user.firstSurname,
+      secondSurname: user.secondSurname,
+      dni: user.dni,
+      email: user.email,
+      photoUrl: user.photoUrl,
+      active: user.active,
+
+      // 🔥 ESTO ES LO QUE EL FRONTEND NECESITA
+      role: membership.role,
+      companyId: membership.companyId,
+      branchId: membership.branchId,
+    };
   }
 
   async changePassword(userId: string, password: string) {
@@ -62,44 +72,74 @@ export class UsersService {
     });
   }
 
-  /* ───────── LISTADO ───────── */
+  /* ───────── LISTADO DE USUARIOS ───────── */
 
   async listUsers(requestUser: any) {
-    const { companyId, branchId, role } = requestUser;
+  const { companyId, branchId, role } = requestUser;
 
-    if (role === Role.SUPERADMIN) {
-      return this.prisma.user.findMany({
-        include: { memberships: true },
-        orderBy: { createdAt: 'desc' },
-      });
-    }
+  let users;
 
-    if (role === Role.ADMIN_EMPRESA) {
-      return this.prisma.user.findMany({
-        where: {
-          memberships: {
-            some: { companyId },
-          },
+  if (role === Role.SUPERADMIN) {
+    users = await this.prisma.user.findMany({
+      include: {
+        memberships: { where: { active: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
+
+  else if (role === Role.ADMIN_EMPRESA) {
+    users = await this.prisma.user.findMany({
+      where: {
+        memberships: {
+          some: { companyId, active: true },
         },
-        include: { memberships: true },
-        orderBy: { createdAt: 'desc' },
-      });
-    }
+      },
+      include: {
+        memberships: { where: { active: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 
-    if (role === Role.ADMIN_SUCURSAL) {
-      return this.prisma.user.findMany({
-        where: {
-          memberships: {
-            some: { companyId, branchId },
-          },
+  else if (role === Role.ADMIN_SUCURSAL) {
+    users = await this.prisma.user.findMany({
+      where: {
+        memberships: {
+          some: { companyId, branchId, active: true },
         },
-        include: { memberships: true },
-        orderBy: { createdAt: 'desc' },
-      });
-    }
+      },
+      include: {
+        memberships: { where: { active: true } },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+  }
 
+  else {
     throw new ForbiddenException();
   }
+
+  // 🔑 APLANADO FINAL (CLAVE)
+  return users.map(u => {
+    const m = u.memberships[0];
+
+    return {
+      id: u.id,
+      name: u.name,
+      firstSurname: u.firstSurname,
+      secondSurname: u.secondSurname,
+      dni: u.dni,
+      email: u.email,
+      photoUrl: u.photoUrl,
+      active: m?.active ?? false,
+      role: m?.role ?? null,
+      branchId: m?.branchId ?? null,
+      companyId: m?.companyId ?? null,
+      createdAt: u.createdAt,
+    };
+  });
+}
 
   /* ───────── CREAR EMPLEADO ───────── */
 
@@ -107,6 +147,7 @@ export class UsersService {
     const { companyId, branchId, role } = requestUser;
 
     let finalBranchId = body.branchId;
+
     if (role === Role.ADMIN_SUCURSAL) {
       finalBranchId = branchId;
     }
@@ -126,11 +167,13 @@ export class UsersService {
         dni: body.dni,
         email: body.email,
         password: passwordHash,
+        active: true,
         memberships: {
           create: {
             companyId,
             branchId: finalBranchId,
             role: Role.EMPLEADO,
+            active: true,
           },
         },
       },
@@ -145,17 +188,19 @@ export class UsersService {
 
   /* ───────── HELPERS ───────── */
 
-  private async getMembership(
-    userId: string,
-    companyId: string,
-  ) {
-    const membership = await this.prisma.membership.findUnique({
+  private async getMembership(userId: string, companyId: string) {
+    const membership = await this.prisma.membership.findFirst({
       where: {
-        userId_companyId: { userId, companyId },
+        userId,
+        companyId,
+        active: true,
       },
     });
 
-    if (!membership) throw new NotFoundException();
+    if (!membership) {
+      throw new NotFoundException();
+    }
+
     return membership;
   }
 
@@ -171,9 +216,7 @@ export class UsersService {
       requestUser.companyId,
     );
 
-    if (
-      roleLevel(target.role) >= roleLevel(requestUser.role)
-    ) {
+    if (roleLevel(target.role) >= roleLevel(requestUser.role)) {
       throw new ForbiddenException();
     }
 
@@ -193,9 +236,7 @@ export class UsersService {
       requestUser.companyId,
     );
 
-    if (
-      roleLevel(target.role) >= roleLevel(requestUser.role)
-    ) {
+    if (roleLevel(target.role) >= roleLevel(requestUser.role)) {
       throw new ForbiddenException();
     }
 
@@ -211,9 +252,7 @@ export class UsersService {
       requestUser.companyId,
     );
 
-    if (
-      roleLevel(target.role) >= roleLevel(requestUser.role)
-    ) {
+    if (roleLevel(target.role) >= roleLevel(requestUser.role)) {
       throw new ForbiddenException();
     }
 
@@ -229,9 +268,7 @@ export class UsersService {
       requestUser.companyId,
     );
 
-    if (
-      roleLevel(target.role) >= roleLevel(requestUser.role)
-    ) {
+    if (roleLevel(target.role) >= roleLevel(requestUser.role)) {
       throw new ForbiddenException();
     }
 

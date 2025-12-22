@@ -5,17 +5,20 @@ export function can(role, action) {
       'employees',
       'branches',
       'reports',
+      'profile',
     ],
     ADMIN_EMPRESA: [
       'dashboard',
       'employees',
       'branches',
       'reports',
+      'profile',
     ],
     ADMIN_SUCURSAL: [
       'dashboard',
       'employees',
       'reports',
+      'profile',
     ],
     EMPLEADO: [
       'reports',

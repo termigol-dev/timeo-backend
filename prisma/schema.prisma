@@ -30,20 +30,24 @@ model Company {
 ///  * BRANCH
 ///  * ======================
 model Branch {
-  id           String       @id @default(uuid())
+  id           String  @id @default(uuid())
   name         String
   address      String
-  active       Boolean      @default(true)
-  tabletToken  String?      @unique
-  tabletActive Boolean      @default(true)
-  companyId    String
-  createdAt    DateTime     @default(now())
-  updatedAt    DateTime     @updatedAt
-  company      Company      @relation(fields: [companyId], references: [id])
-  memberships  Membership[]
-  records      Record[]
-}
+  active       Boolean @default(true)
+  tabletToken  String? @unique
+  tabletActive Boolean @default(true)
 
+  companyId String
+  company   Company @relation(fields: [companyId], references: [id])
+
+  memberships Membership[]
+  records     Record[]
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@unique([companyId, name])
+}
 /// *
 ///  * ======================
 ///  * USER (GLOBAL)

@@ -20,7 +20,6 @@ import { DashboardModule } from './dashboard/dashboard.module';
     ReportsModule,
     TabletModule,
     DashboardModule,
-    BranchesModule,
   ],
 })
 export class AppModule {}

@@ -1,7 +1,10 @@
-import { Injectable, UnauthorizedException } from '@nestjs/common';
+import {
+  Injectable,
+  UnauthorizedException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import * as bcrypt from 'bcryptjs';
 import { JwtService } from '@nestjs/jwt';
+import * as bcrypt from 'bcryptjs';
 
 @Injectable()
 export class AuthService {
@@ -11,7 +14,7 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    // 1️⃣ Buscar usuario + memberships
+    // 1️⃣ Buscar usuario con membresías activas
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
@@ -25,20 +28,35 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // 2️⃣ Validar password
+    // 2️⃣ Validar contraseña
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // 3️⃣ Obtener membership activa
-    const membership = user.memberships[0];
+    // 3️⃣ Obtener membresía activa (CLAVE)
+    if (!user.memberships.length) {
+  throw new UnauthorizedException('El usuario no tiene membresía activa');
+}
+
+const rolePriority = {
+  SUPERADMIN: 4,
+  ADMIN_EMPRESA: 3,
+  ADMIN_SUCURSAL: 2,
+  EMPLEADO: 1,
+};
+
+const membership = user.memberships.sort(
+  (a, b) => rolePriority[b.role] - rolePriority[a.role],
+)[0];
 
     if (!membership) {
-      throw new UnauthorizedException('El usuario no tiene membresía activa');
+      throw new UnauthorizedException(
+        'El usuario no tiene una membresía activa',
+      );
     }
 
-    // 4️⃣ Payload JWT
+    // 4️⃣ Payload JWT (lo que viaja en el token)
     const payload = {
       sub: user.id,
       membershipId: membership.id,
@@ -47,11 +65,17 @@ export class AuthService {
       branchId: membership.branchId,
     };
 
-    // 5️⃣ Respuesta
+    const token = this.jwt.sign(payload);
+
+    // 5️⃣ Respuesta AL FRONTEND (🔥 MUY IMPORTANTE 🔥)
     return {
-      token: this.jwt.sign(payload),
+      token,
       user: {
         id: user.id,
+        name: user.name,
+        email: user.email,
+
+        // 👇 ESTO ES LO QUE EL FRONT USA PARA PERMISOS
         role: membership.role,
         companyId: membership.companyId,
         branchId: membership.branchId,
