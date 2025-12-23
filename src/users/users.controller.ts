@@ -3,6 +3,7 @@ import {
   Get,
   Patch,
   Post,
+  Delete,
   Body,
   Param,
   Req,
@@ -23,13 +24,11 @@ export class UsersController {
 
   @Get('me')
   me(@Req() req) {
-    // ✅ usa userId → OK
     return this.usersService.getProfile(req.user.id);
   }
 
   @Patch('me/password')
   changePassword(@Req() req, @Body() body) {
-    // ✅ correcto
     return this.usersService.changePassword(
       req.user.id,
       body.password,
@@ -38,7 +37,6 @@ export class UsersController {
 
   @Patch('me/photo')
   updatePhoto(@Req() req, @Body() body) {
-    // ✅ correcto
     return this.usersService.updatePhoto(
       req.user.id,
       body.photoUrl,
@@ -51,7 +49,6 @@ export class UsersController {
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
   @Get()
   list(@Req() req) {
-    // ✅ pasa membership info al service
     return this.usersService.listUsers(req.user);
   }
 
@@ -61,7 +58,6 @@ export class UsersController {
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
   @Post()
   create(@Req() req, @Body() body) {
-    // ✅ correcto
     return this.usersService.create(req.user, body);
   }
 
@@ -71,7 +67,6 @@ export class UsersController {
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   @Patch(':id/role')
   updateRole(@Req() req, @Param('id') id: string, @Body() body) {
-    // ✅ ahora actúa sobre Membership
     return this.usersService.updateRole(
       req.user,
       id,
@@ -87,7 +82,6 @@ export class UsersController {
     @Param('id') id: string,
     @Body() body,
   ) {
-    // ✅ correcto
     return this.usersService.updateBranch(
       req.user,
       id,
@@ -99,7 +93,6 @@ export class UsersController {
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
   @Patch(':id/active')
   toggleActive(@Req() req, @Param('id') id: string) {
-    // ✅ correcto
     return this.usersService.toggleActive(req.user, id);
   }
 
@@ -107,7 +100,24 @@ export class UsersController {
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
   @Post(':id/reset-password')
   resetPassword(@Req() req, @Param('id') id: string) {
-    // ✅ correcto
     return this.usersService.resetPassword(req.user, id);
+  }
+
+  /* ───────── PRECHECK BORRADO (CLAVE PARA FRONTEND) ───────── */
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.SUPERADMIN)
+  @Get(':id/delete-check')
+  checkDelete(@Req() req, @Param('id') id: string) {
+    return this.usersService.checkDeleteUser(req.user, id);
+  }
+
+  /* ───────── BORRADO DEFINITIVO ───────── */
+
+  @UseGuards(RolesGuard)
+  @Roles(Role.SUPERADMIN)
+  @Delete(':id')
+  deleteUser(@Req() req, @Param('id') id: string) {
+    return this.usersService.deleteUser(req.user, id);
   }
 }
