@@ -15,13 +15,11 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    // 1️⃣ Buscar usuario con memberships activas
+    // 1️⃣ Usuario + TODAS las memberships
     const user = await this.prisma.user.findUnique({
       where: { email },
       include: {
-        memberships: {
-          where: { active: true },
-        },
+        memberships: true,
       },
     });
 
@@ -29,60 +27,60 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // 2️⃣ Validar contraseña
+    // 2️⃣ Password
     const valid = await bcrypt.compare(password, user.password);
     if (!valid) {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // 3️⃣ Debe tener al menos una membership activa
+    // 3️⃣ Si NO tiene ninguna membership
+    // 👉 solo bloquea si NO es superadmin
     if (!user.memberships.length) {
       throw new UnauthorizedException(
-        'El usuario no tiene membresía activa',
+        'El usuario no tiene ningún rol asignado',
       );
     }
 
-    // 4️⃣ Elegir la membership con mayor rol
-    const rolePriority = {
+    // 4️⃣ Prioridad de roles
+    const rolePriority: Record<Role, number> = {
       SUPERADMIN: 4,
       ADMIN_EMPRESA: 3,
       ADMIN_SUCURSAL: 2,
       EMPLEADO: 1,
     };
 
+    // 5️⃣ Elegir la membership de mayor nivel
     const membership = user.memberships.sort(
       (a, b) => rolePriority[b.role] - rolePriority[a.role],
     )[0];
 
-    if (!membership) {
-      throw new UnauthorizedException(
-        'El usuario no tiene una membresía válida',
-      );
+    // 6️⃣ VALIDACIONES SOLO PARA EMPLEADO
+    if (membership.role === Role.EMPLEADO) {
+      if (!membership.active) {
+        throw new UnauthorizedException(
+          'El empleado no tiene membresía activa',
+        );
+      }
+
+      if (!membership.branchId) {
+        throw new UnauthorizedException(
+          'El empleado no tiene sucursal asignada',
+        );
+      }
     }
 
-    // 5️⃣ Validación de sucursal (CLAVE)
-    if (
-      membership.role !== Role.SUPERADMIN &&
-      membership.role !== Role.ADMIN_EMPRESA &&
-      !membership.branchId
-    ) {
-      throw new UnauthorizedException(
-        'El usuario no tiene sucursal asignada',
-      );
-    }
-
-    // 6️⃣ Payload JWT
+    // 7️⃣ JWT
     const payload = {
       sub: user.id,
       membershipId: membership.id,
       role: membership.role,
-      companyId: membership.companyId,
+      companyId: membership.companyId ?? null,
       branchId: membership.branchId ?? null,
     };
 
     const token = this.jwt.sign(payload);
 
-    // 7️⃣ Respuesta al frontend
+    // 8️⃣ Respuesta frontend
     return {
       token,
       user: {
@@ -90,7 +88,7 @@ export class AuthService {
         name: user.name,
         email: user.email,
         role: membership.role,
-        companyId: membership.companyId,
+        companyId: membership.companyId ?? null,
         branchId: membership.branchId ?? null,
       },
     };
