@@ -2,8 +2,10 @@ import {
   Controller,
   Get,
   Post,
+  Patch,
   Param,
   Req,
+  Body,
   UseGuards,
   NotFoundException,
 } from '@nestjs/common';
@@ -18,23 +20,47 @@ import { Role } from '@prisma/client';
 export class CompaniesController {
   constructor(private readonly companiesService: CompaniesService) {}
 
-  // LISTADO
+  /* ───────── LISTADO ───────── */
+
   @Get()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   findAll(@Req() req) {
     return this.companiesService.findAll(req.user);
   }
 
-  // PERFIL DE EMPRESA 👇 (ESTO FALTABA)
+  /* ───────── PERFIL EMPRESA ───────── */
+
   @Get(':id')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   async findOne(@Param('id') id: string, @Req() req) {
     const company = await this.companiesService.findOne(id, req.user);
-  if (!company) {
-    throw new NotFoundException('Empresa no encontrada');
+
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
+    return company;
   }
 
-  return company;
+  /* ───────── ACTUALIZAR EMPRESA (🔥 ESTO FALTABA 🔥) ───────── */
 
+  @Patch(':id')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  async update(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body,
+  ) {
+    const company = await this.companiesService.update(
+      id,
+      req.user,
+      body,
+    );
+
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
+    return company;
   }
 }
