@@ -1,4 +1,8 @@
-import { Injectable, NotFoundException } from '@nestjs/common';
+import {
+  Injectable,
+  NotFoundException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 
@@ -6,12 +10,31 @@ import { Role } from '@prisma/client';
 export class BranchesService {
   constructor(private prisma: PrismaService) {}
 
-  async findAll(companyId: string | null) {
-    if (!companyId) {
-      // SUPERADMIN → todas las sucursales
+  /* =====================
+     LISTAR SUCURSALES
+  ====================== */
+  async findAll(companyId: string, user: any) {
+    // SUPERADMIN → puede ver sucursales de cualquier empresa
+    if (user.role === Role.SUPERADMIN) {
       return this.prisma.branch.findMany({
+        where: { companyId },
         orderBy: { name: 'asc' },
       });
+    }
+
+    // ADMIN_EMPRESA → comprobar acceso a la empresa
+    const membership = await this.prisma.membership.findFirst({
+      where: {
+        companyId,
+        userId: user.id,
+        active: true,
+      },
+    });
+
+    if (!membership) {
+      throw new ForbiddenException(
+        'No tienes acceso a esta empresa',
+      );
     }
 
     return this.prisma.branch.findMany({
@@ -20,30 +43,68 @@ export class BranchesService {
     });
   }
 
-  async create(companyId: string, data: { name: string; address?: string }) {
+  /* =====================
+     CREAR SUCURSAL
+  ====================== */
+  async create(
+    companyId: string,
+    user: any,
+    data: { name: string; address?: string },
+  ) {
+    if (user.role !== Role.SUPERADMIN) {
+      const membership = await this.prisma.membership.findFirst({
+        where: {
+          companyId,
+          userId: user.id,
+          active: true,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException(
+          'No tienes acceso a esta empresa',
+        );
+      }
+    }
+
     return this.prisma.branch.create({
       data: {
         name: data.name,
         address: data.address,
         active: true,
-        company: {
-          connect: { id: companyId },
-        },
+        companyId,
       },
     });
   }
 
-  async toggleActive(companyId: string | null, branchId: string) {
+  /* =====================
+     ACTIVAR / DESACTIVAR
+  ====================== */
+  async toggleActive(
+    companyId: string,
+    branchId: string,
+    user: any,
+  ) {
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
     });
 
-    if (!branch) {
+    if (!branch || branch.companyId !== companyId) {
       throw new NotFoundException('Sucursal no encontrada');
     }
 
-    if (companyId && branch.companyId !== companyId) {
-      throw new NotFoundException('Sucursal no encontrada');
+    if (user.role !== Role.SUPERADMIN) {
+      const membership = await this.prisma.membership.findFirst({
+        where: {
+          companyId,
+          userId: user.id,
+          active: true,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException();
+      }
     }
 
     return this.prisma.branch.update({
@@ -52,10 +113,14 @@ export class BranchesService {
     });
   }
 
+  /* =====================
+     ELIMINAR SUCURSAL
+  ====================== */
   async removeBranch(
-    companyId: string | null,
+    companyId: string,
     branchId: string,
     mode: 'DELETE_USERS' | 'DEACTIVATE_USERS',
+    user: any,
   ) {
     const branch = await this.prisma.branch.findUnique({
       where: { id: branchId },
@@ -70,12 +135,22 @@ export class BranchesService {
       },
     });
 
-    if (!branch) {
+    if (!branch || branch.companyId !== companyId) {
       throw new NotFoundException('Sucursal no encontrada');
     }
 
-    if (companyId && branch.companyId !== companyId) {
-      throw new NotFoundException('Sucursal no encontrada');
+    if (user.role !== Role.SUPERADMIN) {
+      const membership = await this.prisma.membership.findFirst({
+        where: {
+          companyId,
+          userId: user.id,
+          active: true,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException();
+      }
     }
 
     const memberships = branch.memberships;

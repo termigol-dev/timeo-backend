@@ -15,7 +15,7 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 
-@Controller('branches')
+@Controller('companies/:companyId/branches')
 @UseGuards(JwtGuard, RolesGuard)
 export class BranchesController {
   constructor(private readonly branchesService: BranchesService) {}
@@ -25,8 +25,11 @@ export class BranchesController {
   ====================== */
   @Get()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
-  findAll(@Req() req: any) {
-    return this.branchesService.findAll(req.user.companyId);
+  findAll(
+    @Req() req: any,
+    @Param('companyId') companyId: string,
+  ) {
+    return this.branchesService.findAll(companyId, req.user);
   }
 
   /* =====================
@@ -36,40 +39,41 @@ export class BranchesController {
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   create(
     @Req() req: any,
+    @Param('companyId') companyId: string,
     @Body() body: { name: string; address?: string },
   ) {
-    return this.branchesService.create(req.user.companyId, body);
+    return this.branchesService.create(companyId, req.user, body);
   }
 
   /* =====================
      ACTIVAR / DESACTIVAR
   ====================== */
-  @Patch(':id/toggle')
+  @Patch(':id/active')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   toggle(
     @Req() req: any,
+    @Param('companyId') companyId: string,
     @Param('id') id: string,
   ) {
-    return this.branchesService.toggleActive(req.user.companyId, id);
+    return this.branchesService.toggleActive(companyId, id, req.user);
   }
 
   /* =====================
      ELIMINAR SUCURSAL
-     mode:
-     - DELETE_USERS
-     - DEACTIVATE_USERS
   ====================== */
   @Delete(':id')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   remove(
     @Req() req: any,
+    @Param('companyId') companyId: string,
     @Param('id') id: string,
     @Body() body: { mode: 'DELETE_USERS' | 'DEACTIVATE_USERS' },
   ) {
     return this.branchesService.removeBranch(
-      req.user.companyId,
+      companyId,
       id,
       body.mode,
+      req.user,
     );
   }
 }
