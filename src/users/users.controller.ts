@@ -17,7 +17,7 @@ import { Role } from '@prisma/client';
 
 @Controller('companies/:companyId/employees')
 @UseGuards(JwtGuard, RolesGuard)
-export class EmployeesController {
+export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
   /* ───────── LISTADO EMPLEADOS ───────── */
