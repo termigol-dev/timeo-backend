@@ -31,7 +31,6 @@ export class UsersService {
       where: {
         userId,
         companyId,
-        active: true,
       },
     });
 
@@ -58,7 +57,7 @@ export class UsersService {
     }
   }
 
-  /* ───────── LISTADO EMPLEADOS ───────── */
+  /* ───────── LISTADO EMPLEADOS (ACTIVOS + INACTIVOS) ───────── */
 
   async listUsersByCompany(
     requestUser: any,
@@ -68,7 +67,7 @@ export class UsersService {
 
     let where: any = {
       memberships: {
-        some: { companyId, active: true },
+        some: { companyId }, // ✅ SIN active:true
       },
     };
 
@@ -82,7 +81,7 @@ export class UsersService {
       where,
       include: {
         memberships: {
-          where: { companyId, active: true },
+          where: { companyId }, // ✅ activos e inactivos
         },
       },
       orderBy: { createdAt: 'desc' },
@@ -98,7 +97,7 @@ export class UsersService {
         dni: u.dni,
         email: u.email,
         photoUrl: u.photoUrl,
-        active: m.active,
+        active: m.active,          // 👈 clave para gris
         role: m.role,
         branchId: m.branchId,
         companyId: m.companyId,
