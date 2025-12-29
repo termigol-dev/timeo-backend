@@ -26,8 +26,8 @@ export class BranchesController {
   @Get()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   findAll(
-    @Req() req: any,
     @Param('companyId') companyId: string,
+    @Req() req: any,
   ) {
     return this.branchesService.findAll(companyId, req.user);
   }
@@ -38,8 +38,8 @@ export class BranchesController {
   @Post()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   create(
-    @Req() req: any,
     @Param('companyId') companyId: string,
+    @Req() req: any,
     @Body() body: { name: string; address?: string },
   ) {
     return this.branchesService.create(companyId, req.user, body);
@@ -51,9 +51,9 @@ export class BranchesController {
   @Patch(':id/active')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   toggle(
-    @Req() req: any,
     @Param('companyId') companyId: string,
     @Param('id') id: string,
+    @Req() req: any,
   ) {
     return this.branchesService.toggleActive(companyId, id, req.user);
   }
@@ -64,9 +64,9 @@ export class BranchesController {
   @Delete(':id')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   remove(
-    @Req() req: any,
     @Param('companyId') companyId: string,
     @Param('id') id: string,
+    @Req() req: any,
     @Body() body: { mode: 'DELETE_USERS' | 'DEACTIVATE_USERS' },
   ) {
     return this.branchesService.removeBranch(

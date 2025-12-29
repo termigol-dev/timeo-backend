@@ -15,109 +15,130 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 
-@Controller('users')
-@UseGuards(JwtGuard)
-export class UsersController {
+@Controller('companies/:companyId/employees')
+@UseGuards(JwtGuard, RolesGuard)
+export class EmployeesController {
   constructor(private readonly usersService: UsersService) {}
 
-  /* ───────── PERFIL PROPIO ───────── */
-
-  @Get('me')
-  me(@Req() req) {
-    return this.usersService.getProfile(req.user.id);
-  }
-
-  @Patch('me/password')
-  changePassword(@Req() req, @Body() body) {
-    return this.usersService.changePassword(
-      req.user.id,
-      body.password,
-    );
-  }
-
-  @Patch('me/photo')
-  updatePhoto(@Req() req, @Body() body) {
-    return this.usersService.updatePhoto(
-      req.user.id,
-      body.photoUrl,
-    );
-  }
-
-  /* ───────── LISTADO ───────── */
-
-  @UseGuards(RolesGuard)
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  /* ───────── LISTADO EMPLEADOS ───────── */
   @Get()
-  list(@Req() req) {
-    return this.usersService.listUsers(req.user);
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  list(
+    @Req() req,
+    @Param('companyId') companyId: string,
+  ) {
+    return this.usersService.listUsersByCompany(
+      req.user,
+      companyId,
+    );
   }
 
   /* ───────── CREAR EMPLEADO ───────── */
-
-  @UseGuards(RolesGuard)
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
   @Post()
-  create(@Req() req, @Body() body) {
-    return this.usersService.create(req.user, body);
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  create(
+    @Req() req,
+    @Param('companyId') companyId: string,
+    @Body() body,
+  ) {
+    return this.usersService.createInCompany(
+      req.user,
+      companyId,
+      body,
+    );
   }
 
-  /* ───────── ADMIN ACTIONS ───────── */
-
-  @UseGuards(RolesGuard)
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  /* ───────── CAMBIAR ROL ───────── */
   @Patch(':id/role')
-  updateRole(@Req() req, @Param('id') id: string, @Body() body) {
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  updateRole(
+    @Req() req,
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @Body() body,
+  ) {
     return this.usersService.updateRole(
       req.user,
+      companyId,
       id,
       body.role,
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  /* ───────── CAMBIAR SUCURSAL ───────── */
   @Patch(':id/branch')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   updateBranch(
     @Req() req,
+    @Param('companyId') companyId: string,
     @Param('id') id: string,
     @Body() body,
   ) {
     return this.usersService.updateBranch(
       req.user,
+      companyId,
       id,
       body.branchId,
     );
   }
 
-  @UseGuards(RolesGuard)
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  /* ───────── ACTIVAR / DESACTIVAR ───────── */
   @Patch(':id/active')
-  toggleActive(@Req() req, @Param('id') id: string) {
-    return this.usersService.toggleActive(req.user, id);
-  }
-
-  @UseGuards(RolesGuard)
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
-  @Post(':id/reset-password')
-  resetPassword(@Req() req, @Param('id') id: string) {
-    return this.usersService.resetPassword(req.user, id);
+  toggleActive(
+    @Req() req,
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.toggleActive(
+      req.user,
+      companyId,
+      id,
+    );
   }
 
-  /* ───────── PRECHECK BORRADO (CLAVE PARA FRONTEND) ───────── */
+  /* ───────── RESET PASSWORD ───────── */
+  @Post(':id/reset-password')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  resetPassword(
+    @Req() req,
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.resetPassword(
+      req.user,
+      companyId,
+      id,
+    );
+  }
 
-  @UseGuards(RolesGuard)
-  @Roles(Role.SUPERADMIN)
+  /* ───────── PRECHECK BORRADO ───────── */
   @Get(':id/delete-check')
-  checkDelete(@Req() req, @Param('id') id: string) {
-    return this.usersService.checkDeleteUser(req.user, id);
+  @Roles(Role.SUPERADMIN)
+  checkDelete(
+    @Req() req,
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.checkDeleteUser(
+      req.user,
+      companyId,
+      id,
+    );
   }
 
   /* ───────── BORRADO DEFINITIVO ───────── */
-
-  @UseGuards(RolesGuard)
-  @Roles(Role.SUPERADMIN)
   @Delete(':id')
-  deleteUser(@Req() req, @Param('id') id: string) {
-    return this.usersService.deleteUser(req.user, id);
+  @Roles(Role.SUPERADMIN)
+  delete(
+    @Req() req,
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.deleteUser(
+      req.user,
+      companyId,
+      id,
+    );
   }
 }

@@ -8,7 +8,6 @@ import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 /* ───────── ROLE LEVEL ───────── */
-
 function roleLevel(role: Role) {
   return {
     SUPERADMIN: 4,
@@ -22,81 +21,72 @@ function roleLevel(role: Role) {
 export class UsersService {
   constructor(private prisma: PrismaService) {}
 
-  /* ───────── PERFIL ───────── */
+  /* ───────── HELPERS ───────── */
 
-  async getProfile(userId: string) {
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        memberships: { where: { active: true } },
+  private async getMembership(
+    userId: string,
+    companyId: string,
+  ) {
+    const membership = await this.prisma.membership.findFirst({
+      where: {
+        userId,
+        companyId,
+        active: true,
       },
     });
 
-    if (!user || user.memberships.length === 0) {
-      throw new NotFoundException();
+    if (!membership) {
+      throw new NotFoundException(
+        'El usuario no pertenece a esta empresa',
+      );
     }
 
-    const membership = user.memberships[0];
+    return membership;
+  }
 
-    return {
-      id: user.id,
-      name: user.name,
-      firstSurname: user.firstSurname,
-      secondSurname: user.secondSurname,
-      dni: user.dni,
-      email: user.email,
-      photoUrl: user.photoUrl,
-      active: user.active,
-      role: membership.role,
-      companyId: membership.companyId,
-      branchId: membership.branchId,
+  private ensureCompanyAccess(
+    requestUser: any,
+    companyId: string,
+  ) {
+    if (
+      requestUser.role !== Role.SUPERADMIN &&
+      requestUser.companyId !== companyId
+    ) {
+      throw new ForbiddenException(
+        'No tienes acceso a esta empresa',
+      );
+    }
+  }
+
+  /* ───────── LISTADO EMPLEADOS ───────── */
+
+  async listUsersByCompany(
+    requestUser: any,
+    companyId: string,
+  ) {
+    this.ensureCompanyAccess(requestUser, companyId);
+
+    let where: any = {
+      memberships: {
+        some: { companyId, active: true },
+      },
     };
-  }
 
-  async changePassword(userId: string, password: string) {
-    const hash = await bcrypt.hash(password, 10);
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { password: hash },
-    });
-  }
-
-  async updatePhoto(userId: string, photoUrl: string) {
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: { photoUrl },
-    });
-  }
-
-  /* ───────── LISTADO ───────── */
-
-  async listUsers(requestUser: any) {
-    const { companyId, branchId, role } = requestUser;
-
-    let users;
-
-    if (role === Role.SUPERADMIN) {
-      users = await this.prisma.user.findMany({
-        include: { memberships: { where: { active: true } } },
-        orderBy: { createdAt: 'desc' },
-      });
-    } else if (role === Role.ADMIN_EMPRESA) {
-      users = await this.prisma.user.findMany({
-        where: { memberships: { some: { companyId, active: true } } },
-        include: { memberships: { where: { active: true } } },
-        orderBy: { createdAt: 'desc' },
-      });
-    } else if (role === Role.ADMIN_SUCURSAL) {
-      users = await this.prisma.user.findMany({
-        where: {
-          memberships: { some: { companyId, branchId, active: true } },
-        },
-        include: { memberships: { where: { active: true } } },
-        orderBy: { createdAt: 'desc' },
-      });
-    } else {
-      throw new ForbiddenException();
+    // ADMIN_SUCURSAL → solo su sucursal
+    if (requestUser.role === Role.ADMIN_SUCURSAL) {
+      where.memberships.some.branchId =
+        requestUser.branchId;
     }
+
+    const users = await this.prisma.user.findMany({
+      where,
+      include: {
+        memberships: {
+          where: { companyId, active: true },
+        },
+      },
+      orderBy: { createdAt: 'desc' },
+    });
 
     return users.map(u => {
       const m = u.memberships[0];
@@ -108,10 +98,10 @@ export class UsersService {
         dni: u.dni,
         email: u.email,
         photoUrl: u.photoUrl,
-        active: m?.active ?? false,
-        role: m?.role ?? null,
-        branchId: m?.branchId ?? null,
-        companyId: m?.companyId ?? null,
+        active: m.active,
+        role: m.role,
+        branchId: m.branchId,
+        companyId: m.companyId,
         createdAt: u.createdAt,
       };
     });
@@ -119,21 +109,32 @@ export class UsersService {
 
   /* ───────── CREAR EMPLEADO ───────── */
 
-  async create(requestUser: any, body: any) {
-    const { companyId, branchId, role } = requestUser;
+  async createInCompany(
+    requestUser: any,
+    companyId: string,
+    body: any,
+  ) {
+    this.ensureCompanyAccess(requestUser, companyId);
 
     let finalBranchId = body.branchId;
 
-    if (role === Role.ADMIN_SUCURSAL) {
-      finalBranchId = branchId;
+    if (requestUser.role === Role.ADMIN_SUCURSAL) {
+      finalBranchId = requestUser.branchId;
     }
 
     if (!finalBranchId) {
-      throw new ForbiddenException('Sucursal requerida');
+      throw new ForbiddenException(
+        'La sucursal es obligatoria',
+      );
     }
 
-    const passwordPlain = Math.random().toString(36).slice(-8);
-    const passwordHash = await bcrypt.hash(passwordPlain, 10);
+    const passwordPlain = Math.random()
+      .toString(36)
+      .slice(-8);
+    const passwordHash = await bcrypt.hash(
+      passwordPlain,
+      10,
+    );
 
     const user = await this.prisma.user.create({
       data: {
@@ -148,39 +149,39 @@ export class UsersService {
           create: {
             companyId,
             branchId: finalBranchId,
-            role: Role.EMPLEADO,
+            role: body.role ?? Role.EMPLEADO,
             active: true,
           },
         },
       },
     });
 
-    return { id: user.id, email: user.email, password: passwordPlain };
-  }
-
-  /* ───────── HELPERS ───────── */
-
-  private async getMembership(userId: string, companyId: string) {
-    const membership = await this.prisma.membership.findFirst({
-      where: { userId, companyId, active: true },
-    });
-
-    if (!membership) {
-      throw new NotFoundException();
-    }
-
-    return membership;
+    return {
+      id: user.id,
+      email: user.email,
+      password: passwordPlain,
+    };
   }
 
   /* ───────── ADMIN ACTIONS ───────── */
 
-  async updateRole(requestUser: any, targetUserId: string, newRole: Role) {
+  async updateRole(
+    requestUser: any,
+    companyId: string,
+    userId: string,
+    newRole: Role,
+  ) {
+    this.ensureCompanyAccess(requestUser, companyId);
+
     const target = await this.getMembership(
-      targetUserId,
-      requestUser.companyId,
+      userId,
+      companyId,
     );
 
-    if (roleLevel(target.role) >= roleLevel(requestUser.role)) {
+    if (
+      roleLevel(target.role) >=
+      roleLevel(requestUser.role)
+    ) {
       throw new ForbiddenException();
     }
 
@@ -190,41 +191,51 @@ export class UsersService {
     });
   }
 
- async updateBranch(requestUser: any, userId: string, branchId: string | null) {
-  const target = await this.getMembership(userId, requestUser.companyId);
+  async updateBranch(
+    requestUser: any,
+    companyId: string,
+    userId: string,
+    branchId: string | null,
+  ) {
+    this.ensureCompanyAccess(requestUser, companyId);
 
-  if (roleLevel(target.role) >= roleLevel(requestUser.role)) {
-    throw new ForbiddenException();
-  }
+    const target = await this.getMembership(
+      userId,
+      companyId,
+    );
 
-  // 🟡 CASO: Ninguna sucursal → inactivo
-  if (!branchId) {
+    if (
+      roleLevel(target.role) >=
+      roleLevel(requestUser.role)
+    ) {
+      throw new ForbiddenException();
+    }
+
     return this.prisma.membership.update({
       where: { id: target.id },
       data: {
-        branchId: null,
-        active: false,
+        branchId,
+        active: !!branchId,
       },
     });
   }
 
-  // 🟢 CASO: sucursal asignada → activo
-  return this.prisma.membership.update({
-    where: { id: target.id },
-    data: {
-      branchId,
-      active: true,
-    },
-  });
-}
+  async toggleActive(
+    requestUser: any,
+    companyId: string,
+    userId: string,
+  ) {
+    this.ensureCompanyAccess(requestUser, companyId);
 
-  async toggleActive(requestUser: any, userId: string) {
     const target = await this.getMembership(
       userId,
-      requestUser.companyId,
+      companyId,
     );
 
-    if (roleLevel(target.role) >= roleLevel(requestUser.role)) {
+    if (
+      roleLevel(target.role) >=
+      roleLevel(requestUser.role)
+    ) {
       throw new ForbiddenException();
     }
 
@@ -234,17 +245,28 @@ export class UsersService {
     });
   }
 
-  async resetPassword(requestUser: any, userId: string) {
+  async resetPassword(
+    requestUser: any,
+    companyId: string,
+    userId: string,
+  ) {
+    this.ensureCompanyAccess(requestUser, companyId);
+
     const target = await this.getMembership(
       userId,
-      requestUser.companyId,
+      companyId,
     );
 
-    if (roleLevel(target.role) >= roleLevel(requestUser.role)) {
+    if (
+      roleLevel(target.role) >=
+      roleLevel(requestUser.role)
+    ) {
       throw new ForbiddenException();
     }
 
-    const newPassword = Math.random().toString(36).slice(-8);
+    const newPassword = Math.random()
+      .toString(36)
+      .slice(-8);
     const hash = await bcrypt.hash(newPassword, 10);
 
     await this.prisma.user.update({
@@ -255,14 +277,17 @@ export class UsersService {
     return { password: newPassword };
   }
 
-  /* ───────── PRECHECK BORRADO (CLAVE DE TU MODELO) ───────── */
+  /* ───────── PRECHECK BORRADO ───────── */
 
-  async checkDeleteUser(requestUser: any, userId: string) {
+  async checkDeleteUser(
+    requestUser: any,
+    companyId: string,
+    userId: string,
+  ) {
     if (requestUser.role !== Role.SUPERADMIN) {
       return {
         canDelete: false,
-        mode: 'FORBIDDEN',
-        reason: 'Solo el superadmin puede eliminar usuarios',
+        reason: 'Solo SUPERADMIN',
       };
     }
 
@@ -279,43 +304,33 @@ export class UsersService {
     }
 
     const hasOtherCompanies = user.memberships.some(
-      m => m.companyId !== requestUser.companyId,
+      m => m.companyId !== companyId,
     );
 
-    const hasRecords = user.records.length > 0;
-
-    if (hasOtherCompanies) {
+    if (hasOtherCompanies || user.records.length > 0) {
       return {
         canDelete: false,
-        mode: 'SOFT',
-        reason: 'El usuario ha pertenecido a otra empresa',
+        reason:
+          'El usuario tiene historial o pertenece a otra empresa',
       };
     }
 
-    if (hasRecords) {
-      return {
-        canDelete: false,
-        mode: 'SOFT',
-        reason: 'El usuario tiene registros horarios',
-      };
-    }
-
-    return {
-      canDelete: true,
-      mode: 'HARD',
-      reason: null,
-    };
+    return { canDelete: true };
   }
 
-  /* ───────── BORRADO DEFINITIVO (SOLO SI ES SEGURO) ───────── */
+  async deleteUser(
+    requestUser: any,
+    companyId: string,
+    userId: string,
+  ) {
+    const check = await this.checkDeleteUser(
+      requestUser,
+      companyId,
+      userId,
+    );
 
-  async deleteUser(requestUser: any, userId: string) {
-    const check = await this.checkDeleteUser(requestUser, userId);
-
-    if (!check.canDelete || check.mode !== 'HARD') {
-      throw new ForbiddenException(
-        check.reason || 'No se puede eliminar el usuario',
-      );
+    if (!check.canDelete) {
+      throw new ForbiddenException(check.reason);
     }
 
     await this.prisma.user.delete({
