@@ -17,6 +17,7 @@ import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 
 
+
 @Controller('companies')
 @UseGuards(JwtGuard, RolesGuard)
 export class CompaniesController {
@@ -25,6 +26,7 @@ export class CompaniesController {
   /* ───────── LISTADO ───────── */
 
   @Get()
+  
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   findAll(@Req() req) {
     return this.companiesService.findAll(req.user);
@@ -65,9 +67,13 @@ export class CompaniesController {
 
     return company;
   }
-  async create(@Req() req, @Body() body) {
-    return this.companiesService.create(req.user, body);
-    }
+  /* ───────── CREAR EMPRESA ───────── */
+
+@Post()
+@Roles(Role.SUPERADMIN)
+async create(@Req() req, @Body() body) {
+  return this.companiesService.create(req.user, body);
+}
 
 /* ───────── BORRADO DEFINITIVO (TEST) ───────── */
 
