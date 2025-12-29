@@ -117,4 +117,41 @@ export class CompaniesService {
       data: payload,
     });
   }
+  /* ───────── CREAR EMPRESA ───────── */
+
+async create(user: any, data: any) {
+  if (user.role !== Role.SUPERADMIN) {
+    throw new ForbiddenException(
+      'Solo SUPERADMIN puede crear empresas',
+    );
+  }
+
+  return this.prisma.company.create({
+    data: {
+      legalName: data.legalName,
+      commercialName: data.commercialName,
+      nif: data.nif,
+      address: data.address,
+      plan: data.plan ?? 'BASIC',
+      active: true,
+    },
+  });
+}
+
+/* ───────── BORRADO DEFINITIVO (TEST) ───────── */
+
+async remove(companyId: string) {
+  const company = await this.prisma.company.findUnique({
+    where: { id: companyId },
+  });
+
+  if (!company) {
+    throw new NotFoundException('Empresa no encontrada');
+  }
+
+  // ⚠️ BORRADO REAL (solo test)
+  return this.prisma.company.delete({
+    where: { id: companyId },
+  });
+}
 }

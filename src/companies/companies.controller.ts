@@ -8,12 +8,14 @@ import {
   Body,
   UseGuards,
   NotFoundException,
+  Delete,
 } from '@nestjs/common';
 import { CompaniesService } from './companies.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+
 
 @Controller('companies')
 @UseGuards(JwtGuard, RolesGuard)
@@ -63,4 +65,15 @@ export class CompaniesController {
 
     return company;
   }
+  async create(@Req() req, @Body() body) {
+    return this.companiesService.create(req.user, body);
+    }
+
+/* ───────── BORRADO DEFINITIVO (TEST) ───────── */
+
+@Delete(':id')
+@Roles(Role.SUPERADMIN)
+async remove(@Param('id') id: string) {
+  return this.companiesService.remove(id);
+}
 }
