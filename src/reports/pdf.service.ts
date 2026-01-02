@@ -13,7 +13,7 @@ export class PdfService {
   }) {
     const doc = new PDFDocument({ margin: 40 });
 
-    doc.fontSize(20).text('Timeshift', { align: 'center' });
+    doc.fontSize(20).text('timeo', { align: 'center' });
     doc.moveDown();
 
     doc.fontSize(12).text(`Empresa: ${data.company}`);

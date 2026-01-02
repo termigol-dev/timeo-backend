@@ -3,7 +3,7 @@ version: "3.9"
 services:
   postgres:
     image: postgres:15
-    container_name: timeshift-postgres
+    container_name: timeo-postgres
     restart: always
     environment:
       POSTGRES_USER: postgres
