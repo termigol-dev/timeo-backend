@@ -138,20 +138,68 @@ async create(user: any, data: any) {
   });
 }
 
-/* ───────── BORRADO DEFINITIVO (TEST) ───────── */
+/* ───────── BORRADO DEFINITIVO ───────── */
 
 async remove(companyId: string) {
+  console.log('🗑️ BORRANDO EMPRESA', companyId);
+
   const company = await this.prisma.company.findUnique({
     where: { id: companyId },
+    include: {
+      branches: true,
+      memberships: {
+        include: {
+          user: {
+            include: {
+              memberships: true,
+            },
+          },
+        },
+      },
+    },
   });
 
   if (!company) {
     throw new NotFoundException('Empresa no encontrada');
   }
 
-  // ⚠️ BORRADO REAL (solo test)
-  return this.prisma.company.delete({
-    where: { id: companyId },
+  return this.prisma.$transaction(async tx => {
+    console.log('➡️ Borrando sucursales:', company.branches.length);
+
+    await tx.branch.deleteMany({
+      where: { companyId },
+    });
+
+    console.log('➡️ Procesando memberships:', company.memberships.length);
+
+    for (const membership of company.memberships) {
+      const user = membership.user;
+
+      const otherMemberships = user.memberships.filter(
+        m => m.companyId !== companyId && m.active,
+      );
+
+      await tx.membership.delete({
+        where: { id: membership.id },
+      });
+
+      if (otherMemberships.length === 0) {
+        await tx.user.update({
+          where: { id: user.id },
+          data: { active: false },
+        });
+      }
+    }
+
+    console.log('➡️ Borrando empresa');
+
+    await tx.company.delete({
+      where: { id: companyId },
+    });
+
+    console.log('✅ Empresa borrada');
+
+    return { success: true };
   });
 }
 }
