@@ -10,32 +10,27 @@ export class TabletService {
      EMPLEADOS DE LA TABLET
   =============================== */
   async getEmployees(branchId: string) {
-    return this.prisma.membership.findMany({
-      where: {
-        branchId,
-        active: true,
-        user: { active: true },
-      },
-      orderBy: {
-        user: { firstSurname: 'asc' },
-      },
-      select: {
-        user: {
-          select: {
-            id: true,
-            name: true,
-            firstSurname: true,
-            secondSurname: true,
-            photoUrl: true,
-            records: {
-              take: 1,
-              orderBy: { createdAt: 'desc' },
-            },
+  return this.prisma.membership.findMany({
+    where: {
+      branchId,
+      active: true,
+      user: { active: true },
+    },
+    include: {
+      user: {
+        include: {
+          records: {
+            take: 1,
+            orderBy: { createdAt: 'desc' },
           },
         },
       },
-    });
-  }
+    },
+    orderBy: {
+      user: { firstSurname: 'asc' },
+    },
+  });
+}
 
   /* ===============================
      ENTRADA
