@@ -58,6 +58,40 @@ export class BranchesController {
     return this.branchesService.toggleActive(companyId, id, req.user);
   }
 
+ /* =====================
+   GENERAR TOKEN TABLET
+===================== */
+@Post(':id/tablet-token')
+@Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+generateTabletToken(
+  @Param('companyId') companyId: string,
+  @Param('id') id: string,
+  @Req() req: any,
+) {
+  return this.branchesService.generateTabletToken(
+    companyId,
+    id,
+    req.user,
+  );
+}
+
+  /* =====================
+     🔒 REVOCAR TOKEN TABLET
+  ====================== */
+  @Delete(':id/tablet-token')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  revokeTabletToken(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+    @Req() req: any,
+  ) {
+    return this.branchesService.revokeTabletToken(
+      companyId,
+      id,
+      req.user,
+    );
+  }
+
   /* =====================
      ELIMINAR SUCURSAL
   ====================== */
@@ -76,4 +110,20 @@ export class BranchesController {
       req.user,
     );
   }
+
+  @Post(':id/tablet-token')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  getTabletToken(
+  @Param('companyId') companyId: string,
+  @Param('id') branchId: string,
+  @Req() req: any,
+  ) {
+  return this.branchesService.getOrCreateTabletToken(
+    companyId,
+    branchId,
+    req.user,
+  );
+ }
+
+
 }
