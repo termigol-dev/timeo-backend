@@ -8,7 +8,6 @@ import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 
 /* ───────── CONFIG ───────── */
-// 🆕 Email del SuperAdmin (env > fallback)
 const SUPERADMIN_EMAIL =
   process.env.SUPERADMIN_EMAIL || 'termigol82@gmail.com';
 
@@ -59,7 +58,7 @@ export class UsersService {
     }
   }
 
-  /* ───────── LISTADO EMPLEADOS (ACTIVOS + INACTIVOS) ───────── */
+  /* ───────── LISTADO EMPLEADOS ───────── */
 
   async listUsersByCompany(
     requestUser: any,
@@ -107,7 +106,7 @@ export class UsersService {
     });
   }
 
-  /* ───────── CREAR / REACTIVAR EMPLEADO ───────── */
+  /* ───────── CREAR / REACTIVAR USUARIO ───────── */
 
   async createInCompany(
     requestUser: any,
@@ -122,26 +121,17 @@ export class UsersService {
       finalBranchId = requestUser.branchId;
     }
 
-    if (!finalBranchId) {
+    if (
+      body.role !== Role.ADMIN_EMPRESA &&
+      !finalBranchId
+    ) {
       throw new ForbiddenException(
         'La sucursal es obligatoria',
       );
     }
 
-    /* ────── 🔁 PASO 1.3: REACTIVAR USUARIO ────── */
+    /* ────── REACTIVAR USUARIO ────── */
     if (body.reactivateUserId) {
-      if (
-        body.dni ||
-        body.email ||
-        body.name ||
-        body.firstSurname ||
-        body.secondSurname
-      ) {
-        throw new ForbiddenException(
-          'No se pueden modificar datos personales al reactivar un usuario',
-        );
-      }
-
       const membership =
         await this.prisma.membership.findFirst({
           where: {
@@ -153,15 +143,6 @@ export class UsersService {
       if (!membership) {
         throw new NotFoundException(
           'No existe relación previa con esta empresa',
-        );
-      }
-
-      if (
-        requestUser.role === Role.ADMIN_SUCURSAL &&
-        membership.branchId !== requestUser.branchId
-      ) {
-        throw new ForbiddenException(
-          'No puedes reactivar usuarios de otra sucursal',
         );
       }
 
@@ -180,7 +161,7 @@ export class UsersService {
       };
     }
 
-    /* ────── 🔒 PASO 1.4: COMPROBAR EMAIL DUPLICADO ────── */
+    /* ────── EMAIL DUPLICADO ────── */
     if (body.email) {
       const existingEmailUser =
         await this.prisma.user.findFirst({
@@ -191,57 +172,43 @@ export class UsersService {
         throw new ForbiddenException({
           code: 'EMAIL_EXISTS',
           message:
-            `Este empleado tiene registros activos en la base de datos. ` +
-            `Para modificar el DNI o el email, en este caso, contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
+            `Este email ya existe. Contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
         });
       }
     }
 
-    /* ────── 🔍 PASO 1.1: COMPROBAR DNI ────── */
+    /* ────── DNI DUPLICADO ────── */
     if (body.dni) {
       const existingUser =
         await this.prisma.user.findFirst({
           where: { dni: body.dni },
-          include: {
-            memberships: {
-              where: { companyId },
-            },
-          },
         });
 
       if (existingUser) {
-        const membership = existingUser.memberships[0];
-
-        if (!membership || membership.active === false) {
-          throw new ForbiddenException({
-            code: 'DNI_INACTIVE',
-            message:
-              'Existe un usuario con este DNI que está inactivo',
-            userId: existingUser.id,
-          });
-        }
-
         throw new ForbiddenException({
-          code: 'DNI_ACTIVE',
+          code: 'DNI_EXISTS',
           message:
-            `Este empleado tiene registros activos en la base de datos. ` +
-            `Para modificar el DNI o el email, en este caso, contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
+            `Este DNI ya existe. Contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
         });
       }
     }
 
-    /* ────── CREACIÓN NORMAL ────── */
+    /* ────── PASSWORD OBLIGATORIA ────── */
+    if (!body.password || body.password.length < 6) {
+      throw new ForbiddenException(
+        'La contraseña es obligatoria y debe tener al menos 6 caracteres',
+      );
+    }
 
-    const passwordPlain = Math.random()
-      .toString(36)
-      .slice(-8);
+    const passwordHash = await bcrypt.hash(
+      body.password,
+      10,
+    );
 
-    const passwordHash = await bcrypt.hash(body.password, 10);
-
-console.log('🧪 CREATE USER');
-console.log('EMAIL:', body.email);
-console.log('PASSWORD PLANA:', body.password);
-console.log('PASSWORD HASH:', passwordHash);
+    console.log('🧪 CREATE USER');
+    console.log('EMAIL:', body.email);
+    console.log('PASSWORD PLANA:', body.password);
+    console.log('PASSWORD HASH:', passwordHash);
 
     const user = await this.prisma.user.create({
       data: {
@@ -255,7 +222,7 @@ console.log('PASSWORD HASH:', passwordHash);
         memberships: {
           create: {
             companyId,
-            branchId: finalBranchId,
+            branchId: finalBranchId ?? null,
             role: body.role ?? Role.EMPLEADO,
             active: true,
           },
@@ -266,7 +233,6 @@ console.log('PASSWORD HASH:', passwordHash);
     return {
       id: user.id,
       email: user.email,
-      password: passwordPlain,
     };
   }
 
@@ -311,13 +277,6 @@ console.log('PASSWORD HASH:', passwordHash);
       companyId,
     );
 
-    if (
-      roleLevel(target.role) >=
-      roleLevel(requestUser.role)
-    ) {
-      throw new ForbiddenException();
-    }
-
     return this.prisma.membership.update({
       where: { id: target.id },
       data: {
@@ -339,13 +298,6 @@ console.log('PASSWORD HASH:', passwordHash);
       companyId,
     );
 
-    if (
-      roleLevel(target.role) >=
-      roleLevel(requestUser.role)
-    ) {
-      throw new ForbiddenException();
-    }
-
     return this.prisma.membership.update({
       where: { id: target.id },
       data: { active: !target.active },
@@ -358,18 +310,6 @@ console.log('PASSWORD HASH:', passwordHash);
     userId: string,
   ) {
     this.ensureCompanyAccess(requestUser, companyId);
-
-    const target = await this.getMembership(
-      userId,
-      companyId,
-    );
-
-    if (
-      roleLevel(target.role) >=
-      roleLevel(requestUser.role)
-    ) {
-      throw new ForbiddenException();
-    }
 
     const newPassword = Math.random()
       .toString(36)
@@ -387,58 +327,13 @@ console.log('PASSWORD HASH:', passwordHash);
 
   /* ───────── BORRADO DEFINITIVO ───────── */
 
-  async checkDeleteUser(
-    requestUser: any,
-    companyId: string,
-    userId: string,
-  ) {
-    if (requestUser.role !== Role.SUPERADMIN) {
-      return {
-        canDelete: false,
-        reason: 'Solo SUPERADMIN',
-      };
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        memberships: true,
-        records: true,
-      },
-    });
-
-    if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
-
-    const hasOtherCompanies = user.memberships.some(
-      m => m.companyId !== companyId,
-    );
-
-    if (hasOtherCompanies || user.records.length > 0) {
-      return {
-        canDelete: false,
-        reason:
-          'El usuario tiene historial o pertenece a otra empresa',
-      };
-    }
-
-    return { canDelete: true };
-  }
-
   async deleteUser(
     requestUser: any,
     companyId: string,
     userId: string,
   ) {
-    const check = await this.checkDeleteUser(
-      requestUser,
-      companyId,
-      userId,
-    );
-
-    if (!check.canDelete) {
-      throw new ForbiddenException(check.reason);
+    if (requestUser.role !== Role.SUPERADMIN) {
+      throw new ForbiddenException('Solo SUPERADMIN');
     }
 
     await this.prisma.user.delete({
