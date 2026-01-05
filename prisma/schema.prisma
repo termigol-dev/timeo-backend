@@ -213,6 +213,7 @@ enum IncidentType {
   OUT_LATE
   FORGOT_IN
   FORGOT_OUT
+  WRONG_IN
   ADMIN_NOTE
 }
 

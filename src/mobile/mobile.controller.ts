@@ -51,8 +51,20 @@ export class MobileController {
   }
 
   /* ======================================================
-     CONFIRMAR OLVIDO (IN / OUT)
-     👉 se registra admisión de olvido
+     📌 INCIDENCIAS PENDIENTES DEL EMPLEADO
+     👉 olvidos / llegadas tarde / salidas tarde
+  ====================================================== */
+  @Get('incidents/pending')
+  getPendingIncidents(@Req() req: any) {
+    return this.mobileService.getPendingIncidents({
+      userId: req.user.id,
+      companyId: req.user.companyId,
+    });
+  }
+
+  /* ======================================================
+     CONFIRMAR INCIDENCIA (OLVIDO / TARDE)
+     👉 el empleado admite o no
   ====================================================== */
   @Post('confirm-forgot')
   confirmForgot(

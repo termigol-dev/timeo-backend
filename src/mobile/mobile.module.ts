@@ -1,15 +1,15 @@
 import { Module } from '@nestjs/common';
 import { MobileController } from './mobile.controller';
 import { MobileService } from './mobile.service';
-import { PrismaService } from '../prisma/prisma.service';
-import { IncidentsService } from '../incidents/incidents.service';
+import { PrismaModule } from '../prisma/prisma.module';
+import { IncidentsModule } from '../incidents/incidents.module';
 
 @Module({
-  controllers: [MobileController],
-  providers: [
-    MobileService,
-    PrismaService,
-    IncidentsService, // 👈 para crear/confirmar incidencias
+  imports: [
+    PrismaModule,      // 👈 PrismaService viene de aquí
+    IncidentsModule,   // 👈 IncidentsService viene de aquí
   ],
+  controllers: [MobileController],
+  providers: [MobileService],
 })
 export class MobileModule {}

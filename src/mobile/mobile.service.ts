@@ -1,6 +1,13 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
-import { RecordType, IncidentBy } from '@prisma/client';
+import {
+  RecordType,
+  IncidentBy,
+} from '@prisma/client';
 
 @Injectable()
 export class MobileService {
@@ -31,7 +38,7 @@ export class MobileService {
     });
 
     return {
-      status: lastRecord?.type ?? 'OUT',
+      status: lastRecord?.type ?? RecordType.OUT,
       lastRecord,
     };
   }
@@ -87,13 +94,46 @@ export class MobileService {
   }
 
   /* ======================================================
-     CONFIRMAR OLVIDO
+     📌 INCIDENCIAS PENDIENTES (MÓVIL)
+     - Solo las del empleado
+     - admitted = false
+  ====================================================== */
+  async getPendingIncidents(params: {
+    userId: string;
+    companyId: string;
+  }) {
+    return this.prisma.incident.findMany({
+      where: {
+        userId: params.userId,
+        companyId: params.companyId,
+        admitted: false,
+      },
+      orderBy: {
+        occurredAt: 'desc',
+      },
+    });
+  }
+
+  /* ======================================================
+     CONFIRMAR INCIDENCIA (OLVIDO / TARDE / ETC)
   ====================================================== */
   async confirmForgot(params: {
     incidentId: string;
     admitted: boolean;
     userId: string;
   }) {
+    const incident = await this.prisma.incident.findUnique({
+      where: { id: params.incidentId },
+    });
+
+    if (!incident) {
+      throw new BadRequestException('Incident not found');
+    }
+
+    if (incident.userId !== params.userId) {
+      throw new ForbiddenException();
+    }
+
     return this.prisma.incident.update({
       where: { id: params.incidentId },
       data: {
