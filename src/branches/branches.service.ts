@@ -5,9 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
-import { randomBytes } from 'crypto';
 import { randomUUID } from 'crypto';
-import * as crypto from 'crypto';
 
 @Injectable()
 export class BranchesService {
@@ -113,54 +111,56 @@ export class BranchesService {
       data: { active: !branch.active },
     });
   }
-/* =====================
-   GENERAR / RESET TABLET TOKEN
-===================== */
-async generateTabletToken(
-  companyId: string,
-  branchId: string,
-  user: any,
-) {
-  const branch = await this.prisma.branch.findUnique({
-    where: { id: branchId },
-  });
 
-  if (!branch || branch.companyId !== companyId) {
-    throw new NotFoundException('Sucursal no encontrada');
-  }
-
-  // Permisos
-  if (user.role !== Role.SUPERADMIN) {
-    const membership = await this.prisma.membership.findFirst({
-      where: {
-        companyId,
-        userId: user.id,
-        active: true,
-      },
+  /* =====================
+     🔁 REGENERAR TOKEN TABLET (ÚNICO MÉTODO)
+     👉 invalida cualquier token anterior
+  ====================== */
+  async regenerateTabletToken(
+    companyId: string,
+    branchId: string,
+    user: any,
+  ) {
+    const branch = await this.prisma.branch.findUnique({
+      where: { id: branchId },
     });
 
-    if (!membership) {
-      throw new ForbiddenException();
+    if (!branch || branch.companyId !== companyId) {
+      throw new NotFoundException('Sucursal no encontrada');
     }
+
+    if (user.role !== Role.SUPERADMIN) {
+      const membership = await this.prisma.membership.findFirst({
+        where: {
+          companyId,
+          userId: user.id,
+          active: true,
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException();
+      }
+    }
+
+    const token = randomUUID();
+
+    return this.prisma.branch.update({
+      where: { id: branchId },
+      data: {
+        tabletToken: token,
+        tabletActive: true,
+      },
+      select: {
+        id: true,
+        name: true,
+        tabletToken: true,
+      },
+    });
   }
 
-  const token = randomUUID();
-
-  return this.prisma.branch.update({
-    where: { id: branchId },
-    data: {
-      tabletToken: token,
-      tabletActive: true,
-    },
-    select: {
-      id: true,
-      name: true,
-      tabletToken: true,
-    },
-  });
-}
   /* =====================
-     🔒 REVOCAR TOKEN TABLET (OPCIONAL)
+     🔒 REVOCAR TOKEN TABLET
   ====================== */
   async revokeTabletToken(
     companyId: string,
@@ -280,39 +280,4 @@ async generateTabletToken(
 
     return { success: true };
   }
-
-
-  async getOrCreateTabletToken(
-  companyId: string,
-  branchId: string,
-  user: any,
-) {
-  const branch = await this.prisma.branch.findUnique({
-    where: { id: branchId },
-  });
-
-  if (!branch || branch.companyId !== companyId) {
-    throw new NotFoundException('Sucursal no encontrada');
-  }
-
-  if (
-    user.role !== Role.SUPERADMIN &&
-    user.role !== Role.ADMIN_EMPRESA
-  ) {
-    throw new ForbiddenException();
-  }
-
-  if (branch.tabletToken) {
-    return { tabletToken: branch.tabletToken };
-  }
-
-  const token = crypto.randomUUID();
-
-  await this.prisma.branch.update({
-    where: { id: branchId },
-    data: { tabletToken: token },
-  });
-
-  return { tabletToken: token };
-}
 }

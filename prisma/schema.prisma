@@ -7,10 +7,9 @@ datasource db {
   url      = env("DATABASE_URL")
 }
 
-/// *
-///  * ======================
-///  * COMPANY
-///  * ======================
+/// ======================
+/// COMPANY
+/// ======================
 model Company {
   id             String       @id @default(uuid())
   nif            String       @unique
@@ -21,15 +20,16 @@ model Company {
   active         Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
-  branches       Branch[]
-  memberships    Membership[]
-  records        Record[]
+
+  branches    Branch[]
+  memberships Membership[]
+  records     Record[]
+  incidents   Incident[]
 }
 
-/// *
-///  * ======================
-///  * BRANCH
-///  * ======================
+/// ======================
+/// BRANCH
+/// ======================
 model Branch {
   id           String  @id @default(uuid())
   name         String
@@ -43,16 +43,18 @@ model Branch {
 
   memberships Membership[]
   records     Record[]
+  schedules   Schedule[]
+  incidents   Incident[]
 
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
   @@unique([companyId, name])
 }
-/// *
-///  * ======================
-///  * USER (GLOBAL)
-///  * ======================
+
+/// ======================
+/// USER (GLOBAL)
+/// ======================
 model User {
   id            String       @id @default(uuid())
   name          String
@@ -65,14 +67,16 @@ model User {
   active        Boolean      @default(true)
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
-  memberships   Membership[]
-  records       Record[]
+
+  memberships Membership[]
+  records     Record[]
+  schedules   Schedule[]
+  incidents   Incident[]
 }
 
-/// *
-///  * ======================
-///  * MEMBERSHIP (CLAVE)
-///  * ======================
+/// ======================
+/// MEMBERSHIP (CLAVE)
+/// ======================
 model Membership {
   id        String   @id @default(uuid())
   userId    String
@@ -82,18 +86,20 @@ model Membership {
   active    Boolean  @default(true)
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
+
   branch    Branch?  @relation(fields: [branchId], references: [id])
   company   Company  @relation(fields: [companyId], references: [id])
   user      User     @relation(fields: [userId], references: [id])
+
   records   Record[]
+  incidents Incident[]
 
   @@unique([userId, companyId])
 }
 
-/// *
-///  * ======================
-///  * RECORDS
-///  * ======================
+/// ======================
+/// RECORDS (IN / OUT)
+/// ======================
 model Record {
   id           String     @id @default(uuid())
   type         RecordType
@@ -102,16 +108,91 @@ model Record {
   companyId    String
   branchId     String
   createdAt    DateTime   @default(now())
+
   branch       Branch     @relation(fields: [branchId], references: [id])
   company      Company    @relation(fields: [companyId], references: [id])
   membership   Membership @relation(fields: [membershipId], references: [id])
   user         User       @relation(fields: [userId], references: [id])
+
+  incidents    Incident[]
 }
 
-/// *
-///  * ======================
-///  * ENUMS
-///  * ======================
+/// ======================
+/// INCIDENTS (INCIDENCIAS / NOTAS)
+/// ======================
+model Incident {
+  id            String       @id @default(uuid())
+
+  type          IncidentType
+  createdBy     IncidentBy
+  response      IncidentResponse @default(PENDING)
+
+  userId        String
+  membershipId  String
+  companyId     String
+  branchId      String
+  recordId      String?
+
+  expectedAt    DateTime?
+  occurredAt    DateTime     @default(now())
+  note          String?
+
+  createdAt     DateTime     @default(now())
+
+  user        User        @relation(fields: [userId], references: [id])
+  membership  Membership  @relation(fields: [membershipId], references: [id])
+  company     Company     @relation(fields: [companyId], references: [id])
+  branch      Branch      @relation(fields: [branchId], references: [id])
+  record      Record?     @relation(fields: [recordId], references: [id])
+
+  @@index([userId])
+  @@index([membershipId])
+  @@index([companyId])
+  @@index([branchId])
+  @@index([recordId])
+}
+
+/// ======================
+/// SCHEDULE (HORARIO)
+/// ======================
+model Schedule {
+  id        String   @id @default(uuid())
+  userId    String
+  branchId  String
+
+  validFrom DateTime
+  validTo   DateTime?
+
+  createdAt DateTime @default(now())
+
+  user   User   @relation(fields: [userId], references: [id])
+  branch Branch @relation(fields: [branchId], references: [id])
+
+  shifts Shift[]
+
+  @@index([userId])
+  @@index([branchId])
+}
+
+/// ======================
+/// SHIFT (TURNO)
+/// ======================
+model Shift {
+  id         String @id @default(uuid())
+  scheduleId String
+
+  weekday    Int    // 1 = lunes ... 7 = domingo
+  startTime  String // "09:00"
+  endTime    String // "13:00"
+
+  schedule Schedule @relation(fields: [scheduleId], references: [id])
+
+  @@index([scheduleId])
+}
+
+/// ======================
+/// ENUMS
+/// ======================
 enum Role {
   SUPERADMIN
   ADMIN_EMPRESA
@@ -122,4 +203,25 @@ enum Role {
 enum RecordType {
   IN
   OUT
+}
+
+enum IncidentType {
+  IN_EARLY
+  IN_LATE
+  OUT_LATE
+  FORGOT_IN
+  FORGOT_OUT
+  ADMIN_NOTE
+}
+
+enum IncidentBy {
+  SYSTEM
+  EMPLOYEE
+  ADMIN
+}
+
+enum IncidentResponse {
+  PENDING
+  ADMITTED
+  DENIED
 }

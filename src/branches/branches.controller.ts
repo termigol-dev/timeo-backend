@@ -18,7 +18,9 @@ import { Role } from '@prisma/client';
 @Controller('companies/:companyId/branches')
 @UseGuards(JwtGuard, RolesGuard)
 export class BranchesController {
-  constructor(private readonly branchesService: BranchesService) {}
+  constructor(
+    private readonly branchesService: BranchesService,
+  ) {}
 
   /* =====================
      LISTAR SUCURSALES
@@ -42,7 +44,11 @@ export class BranchesController {
     @Req() req: any,
     @Body() body: { name: string; address?: string },
   ) {
-    return this.branchesService.create(companyId, req.user, body);
+    return this.branchesService.create(
+      companyId,
+      req.user,
+      body,
+    );
   }
 
   /* =====================
@@ -55,25 +61,32 @@ export class BranchesController {
     @Param('id') id: string,
     @Req() req: any,
   ) {
-    return this.branchesService.toggleActive(companyId, id, req.user);
+    return this.branchesService.toggleActive(
+      companyId,
+      id,
+      req.user,
+    );
   }
 
- /* =====================
-   GENERAR TOKEN TABLET
-===================== */
-@Post(':id/tablet-token')
-@Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
-generateTabletToken(
-  @Param('companyId') companyId: string,
-  @Param('id') id: string,
-  @Req() req: any,
-) {
-  return this.branchesService.generateTabletToken(
-    companyId,
-    id,
-    req.user,
-  );
-}
+  /* =====================
+     🔄 REGENERAR TOKEN TABLET (OPCIÓN A)
+     - invalida el anterior
+     - genera uno nuevo
+     - pensado para QR
+  ====================== */
+  @Post(':id/tablet-token')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  regenerateTabletToken(
+    @Param('companyId') companyId: string,
+    @Param('id') branchId: string,
+    @Req() req: any,
+  ) {
+    return this.branchesService.regenerateTabletToken(
+      companyId,
+      branchId,
+      req.user,
+    );
+  }
 
   /* =====================
      🔒 REVOCAR TOKEN TABLET
@@ -82,12 +95,12 @@ generateTabletToken(
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   revokeTabletToken(
     @Param('companyId') companyId: string,
-    @Param('id') id: string,
+    @Param('id') branchId: string,
     @Req() req: any,
   ) {
     return this.branchesService.revokeTabletToken(
       companyId,
-      id,
+      branchId,
       req.user,
     );
   }
@@ -101,7 +114,8 @@ generateTabletToken(
     @Param('companyId') companyId: string,
     @Param('id') id: string,
     @Req() req: any,
-    @Body() body: { mode: 'DELETE_USERS' | 'DEACTIVATE_USERS' },
+    @Body()
+    body: { mode: 'DELETE_USERS' | 'DEACTIVATE_USERS' },
   ) {
     return this.branchesService.removeBranch(
       companyId,
@@ -110,20 +124,4 @@ generateTabletToken(
       req.user,
     );
   }
-
-  @Post(':id/tablet-token')
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
-  getTabletToken(
-  @Param('companyId') companyId: string,
-  @Param('id') branchId: string,
-  @Req() req: any,
-  ) {
-  return this.branchesService.getOrCreateTabletToken(
-    companyId,
-    branchId,
-    req.user,
-  );
- }
-
-
 }
