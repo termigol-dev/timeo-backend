@@ -9,7 +9,14 @@ export class AuthController {
   async login(
     @Body() body: { email: string; password: string },
   ) {
-    // 🔴 IMPORTANTE: devolver el resultado
-    return this.authService.login(body.email, body.password);
+    const result = await this.authService.login(
+      body.email,
+      body.password,
+    );
+
+    // 🔥 LOG ABSOLUTO
+    console.log('✅ LOGIN RESPONSE (BACKEND):', result);
+
+    return result; // ⬅️ ESTO ES CLAVE
   }
 }
