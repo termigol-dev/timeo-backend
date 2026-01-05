@@ -7,6 +7,7 @@ import { PrismaService } from '../prisma/prisma.service';
 import {
   RecordType,
   IncidentBy,
+  IncidentType,
 } from '@prisma/client';
 
 @Injectable()
@@ -57,7 +58,8 @@ export class MobileService {
       throw new BadRequestException('Already IN');
     }
 
-    return this.prisma.record.create({
+    // 1️⃣ Crear siempre el IN
+    const record = await this.prisma.record.create({
       data: {
         type: RecordType.IN,
         userId: params.userId,
@@ -66,6 +68,29 @@ export class MobileService {
         branchId: membership.branchId!,
       },
     });
+
+    // 2️⃣ ¿Hay horario hoy?
+    const hasScheduleToday = await this.hasScheduleToday({
+      userId: params.userId,
+      branchId: membership.branchId!,
+    });
+
+    // 3️⃣ NO hay horario → pedir confirmación (sin crear incidencia)
+    if (!hasScheduleToday) {
+      return {
+        record,
+        requiresConfirmation: true,
+        message:
+          'Hemos registrado tu entrada. No tenías horario laboral asignado para hoy a esta hora.',
+        question: '¿Estás trabajando?',
+      };
+    }
+
+    return {
+      record,
+      requiresConfirmation: false,
+      message: 'Hemos registrado tu entrada.',
+    };
   }
 
   /* ======================================================
@@ -82,7 +107,7 @@ export class MobileService {
       throw new BadRequestException('No active IN');
     }
 
-    return this.prisma.record.create({
+    const record = await this.prisma.record.create({
       data: {
         type: RecordType.OUT,
         userId: params.userId,
@@ -91,56 +116,69 @@ export class MobileService {
         branchId: membership.branchId!,
       },
     });
+
+    return {
+      record,
+      message: 'De acuerdo, queda registrado en el sistema.',
+    };
   }
 
   /* ======================================================
-     📌 INCIDENCIAS PENDIENTES (MÓVIL)
-     - Solo las del empleado
-     - admitted = false
-  ====================================================== */
-  async getPendingIncidents(params: {
-    userId: string;
-    companyId: string;
-  }) {
-    return this.prisma.incident.findMany({
-      where: {
-        userId: params.userId,
-        companyId: params.companyId,
-        admitted: false,
-      },
-      orderBy: {
-        occurredAt: 'desc',
-      },
-    });
-  }
-
-  /* ======================================================
-     CONFIRMAR INCIDENCIA (OLVIDO / TARDE / ETC)
+     CONFIRMACIÓN CASO "NO HAY HORARIO"
+     - admitted = true  → está trabajando → todo OK
+     - admitted = false → WRONG_IN + OUT automático
   ====================================================== */
   async confirmForgot(params: {
-    incidentId: string;
     admitted: boolean;
     userId: string;
   }) {
-    const incident = await this.prisma.incident.findUnique({
-      where: { id: params.incidentId },
+    const membership = await this.getMembership({
+      userId: params.userId,
+      companyId: undefined as any, // se resuelve por relación
     });
 
-    if (!incident) {
-      throw new BadRequestException('Incident not found');
+    const lastRecord = await this.getLastRecord(membership.id);
+    if (!lastRecord || lastRecord.type !== RecordType.IN) {
+      throw new BadRequestException('No active IN');
     }
 
-    if (incident.userId !== params.userId) {
-      throw new ForbiddenException();
+    // 🟢 Dice que SÍ está trabajando → no pasa nada
+    if (params.admitted === true) {
+      return {
+        message: 'De acuerdo. Todo en orden.',
+      };
     }
 
-    return this.prisma.incident.update({
-      where: { id: params.incidentId },
+    // 🔴 Dice que NO está trabajando
+    // 1️⃣ Crear incidencia WRONG_IN
+    await this.prisma.incident.create({
       data: {
-        admitted: params.admitted,
+        type: IncidentType.WRONG_IN,
         createdBy: IncidentBy.EMPLOYEE,
+        admitted: true,
+        userId: params.userId,
+        membershipId: membership.id,
+        companyId: membership.companyId,
+        branchId: membership.branchId!,
+        recordId: lastRecord.id,
       },
     });
+
+    // 2️⃣ Registrar OUT automático
+    await this.prisma.record.create({
+      data: {
+        type: RecordType.OUT,
+        userId: params.userId,
+        membershipId: membership.id,
+        companyId: membership.companyId,
+        branchId: membership.branchId!,
+      },
+    });
+
+    return {
+      message:
+        'Queda registrado en el sistema. Te registro como OUT.',
+    };
   }
 
   /* ======================================================
@@ -149,12 +187,14 @@ export class MobileService {
 
   private async getMembership(params: {
     userId: string;
-    companyId: string;
+    companyId: string | undefined;
   }) {
     const membership = await this.prisma.membership.findFirst({
       where: {
         userId: params.userId,
-        companyId: params.companyId,
+        ...(params.companyId
+          ? { companyId: params.companyId }
+          : {}),
         active: true,
       },
     });
@@ -171,5 +211,27 @@ export class MobileService {
       where: { membershipId },
       orderBy: { createdAt: 'desc' },
     });
+  }
+
+  private async hasScheduleToday(params: {
+    userId: string;
+    branchId: string;
+  }) {
+    const today = new Date();
+    const weekday = today.getDay() === 0 ? 7 : today.getDay();
+
+    const schedule = await this.prisma.schedule.findFirst({
+      where: {
+        userId: params.userId,
+        branchId: params.branchId,
+        validFrom: { lte: today },
+        OR: [{ validTo: null }, { validTo: { gte: today } }],
+        shifts: {
+          some: { weekday },
+        },
+      },
+    });
+
+    return Boolean(schedule);
   }
 }

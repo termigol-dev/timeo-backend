@@ -18,7 +18,6 @@ export class MobileController {
 
   /* ======================================================
      ESTADO ACTUAL DEL EMPLEADO
-     👉 IN / OUT + último registro
   ====================================================== */
   @Get('status')
   getStatus(@Req() req: any) {
@@ -29,7 +28,7 @@ export class MobileController {
   }
 
   /* ======================================================
-     CHECK-IN (IN)
+     CHECK-IN
   ====================================================== */
   @Post('in')
   checkIn(@Req() req: any) {
@@ -40,7 +39,7 @@ export class MobileController {
   }
 
   /* ======================================================
-     CHECK-OUT (OUT)
+     CHECK-OUT
   ====================================================== */
   @Post('out')
   checkOut(@Req() req: any) {
@@ -51,32 +50,16 @@ export class MobileController {
   }
 
   /* ======================================================
-     📌 INCIDENCIAS PENDIENTES DEL EMPLEADO
-     👉 olvidos / llegadas tarde / salidas tarde
+     CONFIRMACIÓN CASO "NO HAY HORARIO"
+     admitted = true  → todo OK
+     admitted = false → WRONG_IN + OUT automático
   ====================================================== */
-  @Get('incidents/pending')
-  getPendingIncidents(@Req() req: any) {
-    return this.mobileService.getPendingIncidents({
-      userId: req.user.id,
-      companyId: req.user.companyId,
-    });
-  }
-
-  /* ======================================================
-     CONFIRMAR INCIDENCIA (OLVIDO / TARDE)
-     👉 el empleado admite o no
-  ====================================================== */
-  @Post('confirm-forgot')
-  confirmForgot(
+  @Post('confirm-incident')
+  confirmIncident(
     @Req() req: any,
-    @Body()
-    body: {
-      incidentId: string;
-      admitted: boolean;
-    },
+    @Body() body: { admitted: boolean },
   ) {
     return this.mobileService.confirmForgot({
-      incidentId: body.incidentId,
       admitted: body.admitted,
       userId: req.user.id,
     });
