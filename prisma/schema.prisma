@@ -133,6 +133,8 @@ model Incident {
   branchId      String
   recordId      String?
 
+  admitted      Boolean      @default(false)
+
   expectedAt    DateTime?
   occurredAt    DateTime     @default(now())
   note          String?
