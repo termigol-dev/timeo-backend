@@ -23,21 +23,52 @@ export class AuthService {
 
   console.log('👤 USER FOUND:', !!user);
 
-  if (!user) {
-    console.log('❌ USER NOT FOUND');
+  if (!user || !user.active) {
     throw new UnauthorizedException('Credenciales incorrectas');
   }
-
-  console.log('✅ USER ACTIVE:', user.active);
-  console.log('🔑 HASH IN DB:', user.password);
 
   const valid = await bcrypt.compare(password, user.password);
   console.log('🔍 PASSWORD VALID:', valid);
 
-  if (!user.active || !valid) {
+  if (!valid) {
     throw new UnauthorizedException('Credenciales incorrectas');
   }
 
-  // ⬇️ deja el resto tal cual
-  }
+  // 👉 elegimos la membership de mayor nivel (si existe)
+  const membership = user.memberships
+    .sort((a, b) => {
+      const priority = {
+        SUPERADMIN: 4,
+        ADMIN_EMPRESA: 3,
+        ADMIN_SUCURSAL: 2,
+        EMPLEADO: 1,
+      };
+      return priority[b.role] - priority[a.role];
+    })[0] ?? null;
+
+  const payload = {
+    sub: user.id,
+    role: membership?.role ?? 'NO_ROLE',
+    companyId: membership?.companyId ?? null,
+    branchId: membership?.branchId ?? null,
+  };
+
+  const token = this.jwt.sign(payload);
+
+  const response = {
+    token,
+    user: {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      role: payload.role,
+      companyId: payload.companyId,
+      branchId: payload.branchId,
+    },
+  };
+
+  console.log('✅ LOGIN RESPONSE (BACKEND):', response);
+
+  return response; // 🔴 ESTE return es el que faltaba
+}
 }

@@ -6,17 +6,16 @@ export class AuthController {
   constructor(private readonly authService: AuthService) {}
 
   @Post('login')
-  async login(
-    @Body() body: { email: string; password: string },
-  ) {
-    const result = await this.authService.login(
-      body.email,
-      body.password,
-    );
+async login(@Body() body) {
+  console.log('🟡 CONTROLLER START');
 
-    // 🔥 LOG ABSOLUTO
-    console.log('✅ LOGIN RESPONSE (BACKEND):', result);
+  const result = await this.authService.login(
+    body.email,
+    body.password,
+  );
 
-    return result; // ⬅️ ESTO ES CLAVE
-  }
+  console.log('🟢 CONTROLLER RETURNING:', result);
+
+  return result;
+}
 }
