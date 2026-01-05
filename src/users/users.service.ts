@@ -325,7 +325,48 @@ export class UsersService {
     return { password: newPassword };
   }
 
+  
+
   /* ───────── BORRADO DEFINITIVO ───────── */
+
+  async checkDeleteUser(
+  requestUser: any,
+  companyId: string,
+  userId: string,
+) {
+  if (requestUser.role !== Role.SUPERADMIN) {
+    return {
+      canDelete: false,
+      reason: 'Solo SUPERADMIN',
+    };
+  }
+
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      memberships: true,
+      records: true,
+    },
+  });
+
+  if (!user) {
+    throw new NotFoundException('Usuario no encontrado');
+  }
+
+  const hasOtherCompanies = user.memberships.some(
+    m => m.companyId !== companyId,
+  );
+
+  if (hasOtherCompanies || user.records.length > 0) {
+    return {
+      canDelete: false,
+      reason:
+        'El usuario tiene historial o pertenece a otra empresa',
+    };
+  }
+
+  return { canDelete: true };
+}
 
   async deleteUser(
     requestUser: any,
