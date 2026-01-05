@@ -64,4 +64,13 @@ export class MobileController {
       userId: req.user.id,
     });
   }
+
+  @Get('schedule')
+getMySchedule(@Req() req: any) {
+  return this.mobileService.getMySchedule({
+    userId: req.user.id,
+    companyId: req.user.companyId,
+  });
+}
+
 }

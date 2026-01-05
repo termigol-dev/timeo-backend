@@ -10,6 +10,8 @@ import {
   IncidentType,
 } from '@prisma/client';
 
+
+
 @Injectable()
 export class MobileService {
   constructor(private prisma: PrismaService) {}
@@ -234,4 +236,31 @@ export class MobileService {
 
     return Boolean(schedule);
   }
+
+   async getMySchedule(params: {
+  userId: string;
+  companyId: string;
+}) {
+  const membership = await this.getMembership(params);
+
+  const schedule = await this.prisma.schedule.findFirst({
+    where: {
+      userId: params.userId,
+      branchId: membership.branchId!,
+      OR: [
+        { validTo: null },
+        { validTo: { gte: new Date() } },
+      ],
+    },
+    include: {
+      shifts: true,
+    },
+  });
+
+  return {
+    shifts: schedule?.shifts ?? [],
+  };
+}
+
+
 }
