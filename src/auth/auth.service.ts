@@ -5,7 +5,6 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import * as bcrypt from 'bcryptjs';
-import { Role } from '@prisma/client';
 
 @Injectable()
 export class AuthService {
@@ -15,82 +14,30 @@ export class AuthService {
   ) {}
 
   async login(email: string, password: string) {
-    // 1️⃣ Usuario + TODAS las memberships
-    const user = await this.prisma.user.findUnique({
-      where: { email },
-      include: {
-        memberships: true,
-      },
-    });
+  console.log('🔐 LOGIN ATTEMPT', email);
 
-    if (!user || !user.active) {
-      throw new UnauthorizedException('Credenciales incorrectas');
-    }
+  const user = await this.prisma.user.findUnique({
+    where: { email },
+    include: { memberships: true },
+  });
 
-    // 2️⃣ Password
-    const valid = await bcrypt.compare(password, user.password);
-    if (!valid) {
-      throw new UnauthorizedException('Credenciales incorrectas');
-    }
+  console.log('👤 USER FOUND:', !!user);
 
-    // 3️⃣ Si NO tiene ninguna membership
-    // 👉 solo bloquea si NO es superadmin
-    if (!user.memberships.length) {
-      throw new UnauthorizedException(
-        'El usuario no tiene ningún rol asignado',
-      );
-    }
+  if (!user) {
+    console.log('❌ USER NOT FOUND');
+    throw new UnauthorizedException('Credenciales incorrectas');
+  }
 
-    // 4️⃣ Prioridad de roles
-    const rolePriority: Record<Role, number> = {
-      SUPERADMIN: 4,
-      ADMIN_EMPRESA: 3,
-      ADMIN_SUCURSAL: 2,
-      EMPLEADO: 1,
-    };
+  console.log('✅ USER ACTIVE:', user.active);
+  console.log('🔑 HASH IN DB:', user.password);
 
-    // 5️⃣ Elegir la membership de mayor nivel
-    const membership = user.memberships.sort(
-      (a, b) => rolePriority[b.role] - rolePriority[a.role],
-    )[0];
+  const valid = await bcrypt.compare(password, user.password);
+  console.log('🔍 PASSWORD VALID:', valid);
 
-    // 6️⃣ VALIDACIONES SOLO PARA EMPLEADO
-    if (membership.role === Role.EMPLEADO) {
-      if (!membership.active) {
-        throw new UnauthorizedException(
-          'El empleado no tiene membresía activa',
-        );
-      }
+  if (!user.active || !valid) {
+    throw new UnauthorizedException('Credenciales incorrectas');
+  }
 
-      if (!membership.branchId) {
-        throw new UnauthorizedException(
-          'El empleado no tiene sucursal asignada',
-        );
-      }
-    }
-
-    // 7️⃣ JWT
-    const payload = {
-      sub: user.id,
-      membershipId: membership.id,
-      role: membership.role,
-      companyId: membership.companyId ?? null,
-      branchId: membership.branchId ?? null,
-    };
-
-    const token = this.jwt.sign(payload);
-
-    // 8️⃣ Respuesta frontend
-    return {
-      token,
-      user: {
-        id: user.id,
-        name: user.name,
-        email: user.email,
-        role: membership.role,
-        companyId: membership.companyId ?? null,
-        branchId: membership.branchId ?? null,
-      },
-    };
+  // ⬇️ deja el resto tal cual
   }
 }

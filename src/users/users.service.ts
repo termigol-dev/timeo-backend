@@ -236,10 +236,12 @@ export class UsersService {
       .toString(36)
       .slice(-8);
 
-    const passwordHash = await bcrypt.hash(
-      passwordPlain,
-      10,
-    );
+    const passwordHash = await bcrypt.hash(body.password, 10);
+
+console.log('🧪 CREATE USER');
+console.log('EMAIL:', body.email);
+console.log('PASSWORD PLANA:', body.password);
+console.log('PASSWORD HASH:', passwordHash);
 
     const user = await this.prisma.user.create({
       data: {
