@@ -199,16 +199,14 @@ export class UsersService {
         'La contraseña es obligatoria y debe tener al menos 6 caracteres',
       );
     }
+    
+    // 🔍 LOGS CRÍTICOS
+  console.log('🧪 body.password TYPE:', typeof body.password);
+  console.log('🧪 body.password VALUE:', JSON.stringify(body.password));
+  console.log('🧪 body.password LENGTH:', body.password?.length);
 
-    const passwordHash = await bcrypt.hash(
-      body.password,
-      10,
-    );
+  const passwordHash = await bcrypt.hash(body.password, 10);
 
-    console.log('🧪 CREATE USER');
-    console.log('EMAIL:', body.email);
-    console.log('PASSWORD PLANA:', body.password);
-    console.log('PASSWORD HASH:', passwordHash);
 
     const user = await this.prisma.user.create({
       data: {
