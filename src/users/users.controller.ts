@@ -112,9 +112,9 @@ export class UsersController {
     );
   }
 
-  /* ───────── PRECHECK BORRADO ───────── */
+  /* ───────── PRECHECK BORRADO (INTELIGENTE) ───────── */
   @Get(':id/delete-check')
-  @Roles(Role.SUPERADMIN)
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
   checkDelete(
     @Req() req,
     @Param('companyId') companyId: string,
@@ -127,9 +127,9 @@ export class UsersController {
     );
   }
 
-  /* ───────── BORRADO DEFINITIVO ───────── */
+  /* ───────── BORRADO (INTELIGENTE) ───────── */
   @Delete(':id')
-  @Roles(Role.SUPERADMIN)
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
   delete(
     @Req() req,
     @Param('companyId') companyId: string,
