@@ -171,6 +171,7 @@ model Schedule {
   branch Branch @relation(fields: [branchId], references: [id])
 
   shifts Shift[]
+  exceptions  ScheduleException[]
 
   @@index([userId])
   @@index([branchId])
@@ -190,6 +191,24 @@ model Shift {
   schedule Schedule @relation(fields: [scheduleId], references: [id])
 
   @@index([scheduleId])
+}
+
+model ScheduleException {
+  id         String   @id @default(uuid())
+  scheduleId String
+
+  date       DateTime
+  startTime  String?  // null = no trabaja ese día
+  endTime    String?
+
+  type       ScheduleExceptionType
+
+  createdAt  DateTime @default(now())
+
+  schedule   Schedule @relation(fields: [scheduleId], references: [id])
+
+  @@index([scheduleId])
+  @@index([date])
 }
 
 /// ======================
@@ -227,4 +246,11 @@ enum IncidentResponse {
   PENDING
   ADMITTED
   DENIED
+}
+
+enum ScheduleExceptionType {
+  EXTRA_SHIFT    // horas extra
+  MODIFIED_SHIFT // cambia horario habitual
+  DAY_OFF        // no trabaja ese día
+  VACATION       // vacaciones
 }
