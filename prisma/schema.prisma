@@ -229,6 +229,7 @@ enum RecordType {
 enum IncidentType {
   IN_EARLY
   IN_LATE
+  OUT_EARLY
   OUT_LATE
   FORGOT_IN
   FORGOT_OUT
