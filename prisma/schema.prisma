@@ -234,6 +234,7 @@ enum IncidentType {
   FORGOT_IN
   FORGOT_OUT
   WRONG_IN
+  WRONG_OUT
   NO_SHOW
   ADMIN_NOTE
 }

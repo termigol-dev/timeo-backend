@@ -1,20 +1,27 @@
-import { Injectable, BadRequestException } from '@nestjs/common';
+import {
+  Injectable,
+  BadRequestException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { RecordType } from '@prisma/client';
+import { IncidentsService } from '../incidents/incidents.service';
 
 @Injectable()
 export class RecordsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private incidentsService: IncidentsService,
+  ) {}
 
   /* ===============================
-     ENTRADA
+     ENTRADA (IN)
   =============================== */
   async recordIn(
     userId: string,
     companyId: string,
     branchId: string,
   ) {
-    // 🔑 Buscar membership activa
+    // 🔑 Membership activa
     const membership = await this.prisma.membership.findFirst({
       where: {
         userId,
@@ -25,7 +32,9 @@ export class RecordsService {
     });
 
     if (!membership) {
-      throw new BadRequestException('No tienes acceso a esta sucursal');
+      throw new BadRequestException(
+        'No tienes acceso a esta sucursal',
+      );
     }
 
     const last = await this.prisma.record.findFirst({
@@ -37,19 +46,24 @@ export class RecordsService {
       throw new BadRequestException('Ya estás dentro');
     }
 
-    return this.prisma.record.create({
+    // 📝 Registrar IN
+    const record = await this.prisma.record.create({
       data: {
         type: RecordType.IN,
         user: { connect: { id: userId } },
         company: { connect: { id: companyId } },
         branch: { connect: { id: branchId } },
-        membership: { connect: { id: membership.id } }, // 🔥 CLAVE
+        membership: { connect: { id: membership.id } },
       },
     });
+
+    
+
+    return record;
   }
 
   /* ===============================
-     SALIDA
+     SALIDA (OUT)
   =============================== */
   async recordOut(
     userId: string,
@@ -66,7 +80,9 @@ export class RecordsService {
     });
 
     if (!membership) {
-      throw new BadRequestException('No tienes acceso a esta sucursal');
+      throw new BadRequestException(
+        'No tienes acceso a esta sucursal',
+      );
     }
 
     const last = await this.prisma.record.findFirst({
@@ -78,15 +94,18 @@ export class RecordsService {
       throw new BadRequestException('No puedes salir');
     }
 
-    return this.prisma.record.create({
+    // 📝 Registrar OUT
+    const record = await this.prisma.record.create({
       data: {
         type: RecordType.OUT,
         user: { connect: { id: userId } },
         company: { connect: { id: companyId } },
         branch: { connect: { id: branchId } },
-        membership: { connect: { id: membership.id } }, // 🔥 CLAVE
+        membership: { connect: { id: membership.id } },
       },
     });
+
+    return record;
   }
 
   /* ===============================

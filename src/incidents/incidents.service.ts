@@ -7,15 +7,19 @@ import {
   IncidentType,
   IncidentBy,
   Role,
+  RecordType,
 } from '@prisma/client';
+import { SchedulesService } from '../schedules/schedules.service';
 
 @Injectable()
 export class IncidentsService {
-  constructor(private prisma: PrismaService) {}
+  constructor(
+    private prisma: PrismaService,
+    private schedulesService: SchedulesService,
+  ) {}
 
   /* ======================================================
      LISTAR INCIDENCIAS
-     (Admin empresa / sucursal)
   ====================================================== */
   async findAll(params: {
     companyId: string;
@@ -45,8 +49,6 @@ export class IncidentsService {
 
   /* ======================================================
      ➕ AÑADIR NOTA (ADMIN)
-     - No es disciplinaria
-     - No afecta a cálculos
   ====================================================== */
   async addAdminNote(params: {
     companyId: string;
@@ -75,21 +77,15 @@ export class IncidentsService {
         occurredAt: new Date(),
 
         user: { connect: { id: params.userId } },
-        membership: {
-          connect: { id: params.membershipId },
-        },
-        company: {
-          connect: { id: params.companyId },
-        },
-        branch: {
-          connect: { id: params.branchId },
-        },
+        membership: { connect: { id: params.membershipId } },
+        company: { connect: { id: params.companyId } },
+        branch: { connect: { id: params.branchId } },
       },
     });
   }
 
   /* ======================================================
-     INCIDENCIA AUTOMÁTICA (SISTEMA / EMPLEADO)
+     CREAR INCIDENCIA AUTOMÁTICA
   ====================================================== */
   async createSystemIncident(params: {
     type: IncidentType;
@@ -111,19 +107,195 @@ export class IncidentsService {
         occurredAt: new Date(),
 
         user: { connect: { id: params.userId } },
-        membership: {
-          connect: { id: params.membershipId },
-        },
-        company: {
-          connect: { id: params.companyId },
-        },
-        branch: {
-          connect: { id: params.branchId },
-        },
+        membership: { connect: { id: params.membershipId } },
+        company: { connect: { id: params.companyId } },
+        branch: { connect: { id: params.branchId } },
         record: params.recordId
           ? { connect: { id: params.recordId } }
           : undefined,
       },
     });
+  }
+
+  /* ======================================================
+     RESPONDER INCIDENCIA (EMPLEADO)
+  ====================================================== */
+  async respondToIncident(params: {
+    incidentId: string;
+    answer: 'YES' | 'NO';
+    user: any;
+  }) {
+    const incident = await this.prisma.incident.findUnique({
+      where: { id: params.incidentId },
+      include: { record: true },
+    });
+
+    if (!incident) {
+      throw new ForbiddenException();
+    }
+
+    // 🔐 Solo el propio empleado
+    if (incident.userId !== params.user.id) {
+      throw new ForbiddenException();
+    }
+
+    // 🔒 Solo incidencias pendientes
+    if (incident.response !== 'PENDING') {
+      return incident;
+    }
+
+    /* =========================
+       IN_EARLY
+    ========================= */
+    if (incident.type === IncidentType.IN_EARLY) {
+      if (params.answer === 'YES') {
+        return this.prisma.incident.update({
+          where: { id: incident.id },
+          data: {
+            response: 'ADMITTED',
+            admitted: true,
+          },
+        });
+      }
+
+      if (params.answer === 'NO') {
+        await this.createSystemIncident({
+          type: IncidentType.WRONG_IN,
+          createdBy: IncidentBy.EMPLOYEE,
+          admitted: true,
+          userId: incident.userId,
+          membershipId: incident.membershipId,
+          companyId: incident.companyId,
+          branchId: incident.branchId,
+          recordId: incident.recordId ?? undefined,
+        });
+
+        await this.prisma.record.create({
+          data: {
+            type: RecordType.OUT,
+            userId: incident.userId,
+            membershipId: incident.membershipId,
+            companyId: incident.companyId,
+            branchId: incident.branchId,
+          },
+        });
+
+        await this.prisma.incident.delete({
+          where: { id: incident.id },
+        });
+
+        return { ok: true };
+      }
+    }
+
+    /* =========================
+       OUT_EARLY
+    ========================= */
+    if (incident.type === IncidentType.OUT_EARLY) {
+      if (params.answer === 'YES') {
+        await this.createSystemIncident({
+          type: IncidentType.WRONG_OUT,
+          createdBy: IncidentBy.EMPLOYEE,
+          admitted: true,
+          userId: incident.userId,
+          membershipId: incident.membershipId,
+          companyId: incident.companyId,
+          branchId: incident.branchId,
+          recordId: incident.recordId ?? undefined,
+        });
+
+        await this.prisma.record.create({
+          data: {
+            type: RecordType.IN,
+            userId: incident.userId,
+            membershipId: incident.membershipId,
+            companyId: incident.companyId,
+            branchId: incident.branchId,
+          },
+        });
+
+        await this.prisma.incident.delete({
+          where: { id: incident.id },
+        });
+
+        return { ok: true };
+      }
+
+      if (params.answer === 'NO') {
+        return this.prisma.incident.update({
+          where: { id: incident.id },
+          data: {
+            response: 'ADMITTED',
+            admitted: true,
+          },
+        });
+      }
+    }
+
+    /* =========================
+       OUT_LATE (15 min)
+    ========================= */
+    if (incident.type === IncidentType.OUT_LATE) {
+      if (params.answer === 'YES') {
+        // Sigue trabajando → no se toca nada
+        return this.prisma.incident.update({
+          where: { id: incident.id },
+          data: {
+            response: 'ADMITTED',
+          },
+        });
+      }
+
+      if (params.answer === 'NO') {
+        // Se olvidó → FORGOT_OUT + OUT automático
+        await this.createSystemIncident({
+          type: IncidentType.FORGOT_OUT,
+          createdBy: IncidentBy.EMPLOYEE,
+          admitted: true,
+          userId: incident.userId,
+          membershipId: incident.membershipId,
+          companyId: incident.companyId,
+          branchId: incident.branchId,
+        });
+
+        await this.prisma.record.create({
+          data: {
+            type: RecordType.OUT,
+            userId: incident.userId,
+            membershipId: incident.membershipId,
+            companyId: incident.companyId,
+            branchId: incident.branchId,
+          },
+        });
+
+        return { ok: true };
+      }
+    }
+
+    /* =========================
+       FORGOT_OUT (3h)
+    ========================= */
+    if (incident.type === IncidentType.FORGOT_OUT) {
+      if (params.answer === 'YES') {
+        // Sigue trabajando → no se elimina
+        return { ok: true };
+      }
+
+      if (params.answer === 'NO') {
+        await this.prisma.record.create({
+          data: {
+            type: RecordType.OUT,
+            userId: incident.userId,
+            membershipId: incident.membershipId,
+            companyId: incident.companyId,
+            branchId: incident.branchId,
+          },
+        });
+
+        return { ok: true };
+      }
+    }
+
+    return incident;
   }
 }

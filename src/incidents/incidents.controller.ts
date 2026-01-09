@@ -5,13 +5,17 @@ import {
   Body,
   Query,
   Req,
+  Param,
   UseGuards,
 } from '@nestjs/common';
 import { IncidentsService } from './incidents.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
-import { Role } from '@prisma/client';
+import {
+  Role,
+  IncidentResponse,
+} from '@prisma/client';
 
 @Controller('incidents')
 @UseGuards(JwtGuard, RolesGuard)
@@ -72,5 +76,22 @@ export class IncidentsController {
       branchId: body.branchId,
       note: body.note,
     });
+  }
+
+  /* ===============================
+     RESPONDER INCIDENCIA
+     - Empleado o Admin
+     - SÍ / NO / ADMITIR / DENEGAR
+  =============================== */
+  @Post(':id/respond')
+  respondIncident(
+    @Req() req: any,
+    @Param('id') incidentId: string,
+    @Body()
+    body: {
+      response: IncidentResponse; // ADMITTED | DENIED
+    },
+  ) {
+    
   }
 }

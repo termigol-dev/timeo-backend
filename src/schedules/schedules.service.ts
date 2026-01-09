@@ -9,16 +9,22 @@ import { Role } from '@prisma/client';
 
 /**
  * Servicio de HORARIOS
- * - Se crean en borrador
- * - Se validan
- * - Se confirman de una sola vez
+ *
+ * PRINCIPIO CLAVE:
+ * Este servicio SOLO responde a una pregunta:
+ *
+ * 👉 ¿Este usuario tenía que trabajar en esta fecha y hora?
+ *
+ * NO interpreta incidencias
+ * NO crea registros
+ * NO toma decisiones disciplinarias
  */
 @Injectable()
 export class SchedulesService {
   constructor(private prisma: PrismaService) {}
 
   /* ======================================================
-     CREAR HORARIO EN BORRADOR (NO ACTIVO AÚN)
+     CREAR HORARIO EN BORRADOR
   ====================================================== */
   async createDraftSchedule(
     companyId: string,
@@ -26,7 +32,6 @@ export class SchedulesService {
     userId: string,
     admin: any,
   ) {
-    // Permisos
     if (
       ![Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL].includes(
         admin.role,
@@ -35,7 +40,6 @@ export class SchedulesService {
       throw new ForbiddenException();
     }
 
-    // Comprobamos que el empleado pertenece a la empresa
     const membership = await this.prisma.membership.findFirst({
       where: {
         userId,
@@ -54,21 +58,19 @@ export class SchedulesService {
       data: {
         userId,
         branchId,
-        validFrom: new Date(), // se ajustará al confirmar
+        validFrom: new Date(), // se ajusta al confirmar
       },
       include: { shifts: true },
     });
   }
 
   /* ======================================================
-     AÑADIR TURNO A HORARIO (BORRADOR)
-     weekday: 1 (lunes) → 7 (domingo)
-     startTime / endTime: "HH:mm"
+     AÑADIR TURNO (BORRADOR)
   ====================================================== */
   async addShiftToSchedule(
     scheduleId: string,
     data: {
-      weekday: number;
+      weekday: number; // 1 = lunes ... 7 = domingo
       startTime: string;
       endTime: string;
     },
@@ -103,7 +105,7 @@ export class SchedulesService {
   }
 
   /* ======================================================
-     PREVISUALIZAR HORAS SEMANALES (SIN GUARDAR)
+     CALCULAR HORAS SEMANALES (PREVISUALIZACIÓN)
   ====================================================== */
   async calculateWeeklyHours(scheduleId: string) {
     const shifts = await this.prisma.shift.findMany({
@@ -116,10 +118,7 @@ export class SchedulesService {
       const [sh, sm] = shift.startTime.split(':').map(Number);
       const [eh, em] = shift.endTime.split(':').map(Number);
 
-      const start = sh * 60 + sm;
-      const end = eh * 60 + em;
-
-      totalMinutes += end - start;
+      totalMinutes += eh * 60 + em - (sh * 60 + sm);
     }
 
     return {
@@ -130,9 +129,9 @@ export class SchedulesService {
   }
 
   /* ======================================================
-     CONFIRMAR HORARIO (ACTIVARLO)
+     CONFIRMAR HORARIO
      - Cierra horarios anteriores
-     - Este pasa a ser el válido
+     - Activa este
   ====================================================== */
   async confirmSchedule(scheduleId: string) {
     const schedule = await this.prisma.schedule.findUnique({
@@ -150,19 +149,15 @@ export class SchedulesService {
       );
     }
 
-    // Cerramos horarios anteriores
     await this.prisma.schedule.updateMany({
       where: {
         userId: schedule.userId,
         validTo: null,
         NOT: { id: schedule.id },
       },
-      data: {
-        validTo: new Date(),
-      },
+      data: { validTo: new Date() },
     });
 
-    // Activamos este
     return this.prisma.schedule.update({
       where: { id: schedule.id },
       data: {
@@ -173,8 +168,7 @@ export class SchedulesService {
   }
 
   /* ======================================================
-     VER HORARIO ACTIVO DE UN EMPLEADO
-     (Empleado / Admin)
+     OBTENER HORARIO ACTIVO
   ====================================================== */
   async getActiveSchedule(userId: string) {
     return this.prisma.schedule.findFirst({
@@ -187,5 +181,60 @@ export class SchedulesService {
         branch: true,
       },
     });
+  }
+
+  /* ======================================================
+     🔑 MÉTODO CLAVE DEL SISTEMA
+     ¿Tenía que trabajar este usuario en esta fecha?
+  ====================================================== */
+  async getExpectedShiftForDate(
+    userId: string,
+    branchId: string,
+    date: Date,
+  ): Promise<{
+    weekday: number;
+    startTime: string;
+    endTime: string;
+  } | null> {
+    // 1️⃣ Buscar schedule válido para esa fecha
+    const schedule = await this.prisma.schedule.findFirst({
+      where: {
+        userId,
+        branchId,
+        validFrom: { lte: date },
+        OR: [{ validTo: null }, { validTo: { gte: date } }],
+      },
+      include: { shifts: true },
+    });
+
+    if (!schedule) return null;
+
+    // 2️⃣ Calcular weekday (1 = lunes, 7 = domingo)
+    const jsDay = date.getDay(); // 0 = domingo
+    const weekday = jsDay === 0 ? 7 : jsDay;
+
+    // 3️⃣ Buscar turno del día
+    const shift = schedule.shifts.find(
+      s => s.weekday === weekday,
+    );
+
+    if (!shift) return null;
+
+    return {
+      weekday,
+      startTime: shift.startTime,
+      endTime: shift.endTime,
+    };
+  }
+
+  /* ======================================================
+     UTILIDAD PARA JOB / RECORDS
+     Convierte hora "HH:mm" en Date real
+  ====================================================== */
+  buildDateWithTime(baseDate: Date, time: string) {
+    const [h, m] = time.split(':').map(Number);
+    const d = new Date(baseDate);
+    d.setHours(h, m, 0, 0);
+    return d;
   }
 }
