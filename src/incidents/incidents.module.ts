@@ -7,10 +7,10 @@ import { SchedulesModule } from '../schedules/schedules.module';
 @Module({
   imports: [
     PrismaModule,
-    SchedulesModule, // ⬅️ ESTO ES LO QUE FALTABA
+    SchedulesModule,
   ],
   controllers: [IncidentsController],
   providers: [IncidentsService],
-  exports: [IncidentsService],
+  exports: [IncidentsService], // ⬅️ OBLIGATORIO
 })
 export class IncidentsModule {}
