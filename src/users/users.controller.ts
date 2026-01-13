@@ -141,4 +141,17 @@ export class UsersController {
       id,
     );
   }
+
+  /* ───────── BORRADO DEFINITIVO (SOLO PRUEBAS) ───────── */
+  @Delete(':id/hard')
+  @Roles(Role.SUPERADMIN)
+  hardDelete(
+    @Param('companyId') companyId: string,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.hardDeleteEmployee(
+      companyId,
+      id,
+    );
+  }
 }
