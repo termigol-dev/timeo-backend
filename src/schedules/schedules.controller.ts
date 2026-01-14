@@ -121,17 +121,32 @@ export class SchedulesController {
     return this.schedulesService.getActiveSchedule(userId);
   }
   
-  @Post(':scheduleId/vacations')
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
-  addVacation(
+@Post(':scheduleId/vacations')
+@Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+async addVacation(
   @Req() req,
   @Param('scheduleId') scheduleId: string,
   @Body() body,
-  ) {
-  return this.schedulesService.addVacation(
-    req.user,
-    scheduleId,
-    body,
-  );
+) {
+  try {
+    console.log('🟠 CONTROLLER addVacation', {
+      scheduleId,
+      body,
+      user: req.user?.id,
+    });
+
+    return await this.schedulesService.addVacation(
+      req.user,
+      scheduleId,
+      body,
+    );
+  } catch (error) {
+    console.error(
+      '🔥 CONTROLLER addVacation ERROR',
+      error?.message,
+      error?.stack,
+    );
+    throw error;
+  }
 }
 }
