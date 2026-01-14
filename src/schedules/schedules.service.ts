@@ -173,11 +173,11 @@ async addVacation(
       throw new NotFoundException('Horario no encontrado');
     }
 
-    if (schedule.shifts.length === 0) {
+    /*if (schedule.shifts.length === 0) {
       throw new BadRequestException(
         'El horario no tiene turnos',
       );
-    }
+    }*/
 
     await this.prisma.schedule.updateMany({
       where: {
@@ -209,6 +209,7 @@ async addVacation(
       include: {
         shifts: true,
         branch: true,
+        //exceptions: true,
       },
     });
   }
