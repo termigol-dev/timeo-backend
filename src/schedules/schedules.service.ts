@@ -112,17 +112,32 @@ async addVacation(
     throw new NotFoundException('Horario no encontrado');
   }
 
+  const date = new Date(body.date);
+
+  // ⛔ EVITAR DUPLICADOS
+  const existing = await this.prisma.scheduleException.findFirst({
+    where: {
+      scheduleId,
+      date,
+      type: 'VACATION',
+    },
+  });
+
+  if (existing) {
+    // 👌 idempotente: no error, no duplicado
+    return existing;
+  }
+
   return this.prisma.scheduleException.create({
     data: {
       scheduleId,
-      date: new Date(body.date),
+      date,
       startTime: null,
       endTime: null,
       type: 'VACATION',
     },
   });
 }
-
   /* ======================================================
      ELIMINAR TURNO (BORRADOR)
   ====================================================== */
