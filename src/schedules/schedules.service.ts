@@ -102,10 +102,8 @@ export class SchedulesService {
 async addVacation(
   requestUser: any,
   scheduleId: string,
-  body: { dateFrom: string; dateTo: string },
+  body: { date: string },
 ) {
-  // (opcional pero recomendable)
-  // comprobar que el horario existe
   const schedule = await this.prisma.schedule.findUnique({
     where: { id: scheduleId },
   });
@@ -117,7 +115,7 @@ async addVacation(
   return this.prisma.scheduleException.create({
     data: {
       scheduleId,
-      date: new Date(body.dateFrom), // por ahora usamos dateFrom
+      date: new Date(body.date),
       startTime: null,
       endTime: null,
       type: 'VACATION',
