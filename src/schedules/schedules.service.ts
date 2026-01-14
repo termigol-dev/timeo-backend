@@ -7,6 +7,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 
+
 /**
  * Servicio de HORARIOS
  *
@@ -94,6 +95,35 @@ export class SchedulesService {
       },
     });
   }
+
+/* ======================================================
+     AÑADIR VACACIONES (BORRADOR)
+  ====================================================== */
+async addVacation(
+  requestUser: any,
+  scheduleId: string,
+  body: { dateFrom: string; dateTo: string },
+) {
+  // (opcional pero recomendable)
+  // comprobar que el horario existe
+  const schedule = await this.prisma.schedule.findUnique({
+    where: { id: scheduleId },
+  });
+
+  if (!schedule) {
+    throw new NotFoundException('Horario no encontrado');
+  }
+
+  return this.prisma.scheduleException.create({
+    data: {
+      scheduleId,
+      date: new Date(body.dateFrom), // por ahora usamos dateFrom
+      startTime: null,
+      endTime: null,
+      type: 'VACATION',
+    },
+  });
+}
 
   /* ======================================================
      ELIMINAR TURNO (BORRADOR)

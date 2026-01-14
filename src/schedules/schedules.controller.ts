@@ -120,4 +120,18 @@ export class SchedulesController {
   getActiveSchedule(@Param('userId') userId: string) {
     return this.schedulesService.getActiveSchedule(userId);
   }
+  
+  @Post(':scheduleId/vacations')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  addVacation(
+  @Req() req,
+  @Param('scheduleId') scheduleId: string,
+  @Body() body,
+  ) {
+  return this.schedulesService.addVacation(
+    req.user,
+    scheduleId,
+    body,
+  );
+}
 }
