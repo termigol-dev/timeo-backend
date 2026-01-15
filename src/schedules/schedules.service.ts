@@ -215,16 +215,19 @@ async addVacation(
   ====================================================== */
   async getActiveSchedule(userId: string) {
     return this.prisma.schedule.findFirst({
-      where: {
-        userId,
-        validTo: null,
-      },
-      include: {
-        shifts: true,
-        branch: true,
-        //exceptions: true,
-      },
-    });
+  where: {
+    userId,
+    validFrom: { lte: new Date() },
+    OR: [
+      { validTo: null },
+      { validTo: { gte: new Date() } },
+    ],
+  },
+  include: {
+    shifts: true,
+    exceptions: true, // 👈 ESTO ES LO QUE FALTABA
+  },
+});
   }
 
   /* ======================================================
