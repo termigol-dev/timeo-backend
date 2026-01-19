@@ -17,7 +17,7 @@ import { Role } from '@prisma/client';
 @Controller('companies/:companyId/branches/:branchId/schedules')
 @UseGuards(JwtGuard, RolesGuard)
 export class SchedulesController {
-  constructor(private readonly schedulesService: SchedulesService) {}
+  constructor(private readonly schedulesService: SchedulesService) { }
 
   /* ======================================================
      CREAR HORARIO (BORRADOR)
@@ -67,7 +67,7 @@ export class SchedulesController {
   }
 
   /* ======================================================
-     ELIMINAR TURNO
+     ELIMINAR TURNO (UNITARIO)
   ====================================================== */
   @Delete('shifts/:shiftId')
   @Roles(
@@ -120,18 +120,49 @@ export class SchedulesController {
   getActiveSchedule(@Param('userId') userId: string) {
     return this.schedulesService.getActiveSchedule(userId);
   }
-  
+
+  /* ======================================================
+     AÑADIR VACACIONES
+  ====================================================== */
   @Post(':scheduleId/vacations')
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  @Roles(
+    Role.SUPERADMIN,
+    Role.ADMIN_EMPRESA,
+    Role.ADMIN_SUCURSAL,
+  )
   addVacation(
-  @Req() req,
-  @Param('scheduleId') scheduleId: string,
-  @Body() body,
+    @Req() req,
+    @Param('scheduleId') scheduleId: string,
+    @Body() body,
   ) {
-  return this.schedulesService.addVacation(
-    req.user,
-    scheduleId,
-    body,
-  );
-}
+    return this.schedulesService.addVacation(
+      req.user,
+      scheduleId,
+      body,
+    );
+  }
+
+  /* ======================================================
+   ELIMINAR VACACIONES
+====================================================== */
+  @Delete(':scheduleId/vacations')
+  @Roles(
+    Role.SUPERADMIN,
+    Role.ADMIN_EMPRESA,
+    Role.ADMIN_SUCURSAL,
+  )
+  deleteVacation(
+    @Param('scheduleId') scheduleId: string,
+    @Body()
+    body: {
+      date: string;
+      mode: 'single' | 'forward';
+    },
+  ) {
+    return this.schedulesService.deleteVacation(
+      scheduleId,
+      body.date,
+      body.mode,
+    );
+  }
 }
