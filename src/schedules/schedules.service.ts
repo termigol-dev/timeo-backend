@@ -229,21 +229,26 @@ export class SchedulesService {
      OBTENER HORARIO ACTIVO
   ====================================================== */
   async getActiveSchedule(userId: string) {
-    return this.prisma.schedule.findFirst({
-      where: {
-        userId,
-        validFrom: { lte: new Date() },
-        OR: [
-          { validTo: null },
-          { validTo: { gte: new Date() } },
-        ],
-      },
-      include: {
-        shifts: true,
-        exceptions: true, // 👈 ESTO ES LO QUE FALTABA
-      },
-    });
-  }
+  const schedule = await this.prisma.schedule.findFirst({
+    where: {
+      userId,
+      validFrom: { lte: new Date() },
+      OR: [
+        { validTo: null },
+        { validTo: { gte: new Date() } },
+      ],
+    },
+    include: {
+      shifts: true,
+      exceptions: true,
+    },
+  });
+
+  console.log('🟥 BACKEND SCHEDULE ACTIVO:', schedule?.id);
+  console.log('🟥 BACKEND SHIFTS CRUDOS:', schedule?.shifts);
+
+  return schedule;
+}
 
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
