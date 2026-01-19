@@ -160,14 +160,7 @@ export class SchedulesService {
       },
     });
   }
-  /* ======================================================
-     ELIMINAR TURNO (BORRADOR)
-  ====================================================== */
-  async removeShift(shiftId: string) {
-    return this.prisma.shift.delete({
-      where: { id: shiftId },
-    });
-  }
+ 
 
   /* ======================================================
      CALCULAR HORAS SEMANALES (PREVISUALIZACIÓN)

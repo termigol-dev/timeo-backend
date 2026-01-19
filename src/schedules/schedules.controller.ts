@@ -66,19 +66,34 @@ export class SchedulesController {
     );
   }
 
-  /* ======================================================
-     ELIMINAR TURNO (UNITARIO)
-  ====================================================== */
-  @Delete('shifts/:shiftId')
-  @Roles(
-    Role.SUPERADMIN,
-    Role.ADMIN_EMPRESA,
-    Role.ADMIN_SUCURSAL,
-  )
-  removeShift(@Param('shiftId') shiftId: string) {
-    return this.schedulesService.removeShift(shiftId);
-  }
-
+ 
+/* ======================================================
+   🆕 ELIMINAR TURNOS (PANEL SUPERIOR)
+====================================================== */
+@Delete(':scheduleId/shifts')
+@Roles(
+  Role.SUPERADMIN,
+  Role.ADMIN_EMPRESA,
+  Role.ADMIN_SUCURSAL,
+)
+deleteShifts(
+  @Param('scheduleId') scheduleId: string,
+  @Body()
+  body: {
+    source: 'PANEL' | 'CALENDAR';
+    mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
+    dateFrom?: string;
+    dateTo?: string;
+    startTime?: string;
+    endTime?: string;
+    shiftId?: string;
+  },
+) {
+  return this.schedulesService.deleteShifts(
+    scheduleId,
+    body,
+  );
+}
   /* ======================================================
      CALCULAR HORAS SEMANALES (PREVIEW)
   ====================================================== */
