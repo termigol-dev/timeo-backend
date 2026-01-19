@@ -339,15 +339,26 @@ export class SchedulesService {
     }
 
     // =========================
-    // CASO 1 — SOLO ESTE BLOQUE
+    // CASO 1 — SOLO ESTE BLOQUE (por rango horario + día)
     // =========================
     if (mode === 'ONLY_THIS_BLOCK') {
-      if (!shiftId) {
-        throw new BadRequestException('shiftId requerido');
+      if (!dateFrom || !startTime || !endTime) {
+        throw new BadRequestException(
+          'dateFrom, startTime y endTime son obligatorios',
+        );
       }
 
-      return this.prisma.shift.delete({
-        where: { id: shiftId },
+      const baseDate = new Date(dateFrom);
+      const jsDay = baseDate.getDay(); // 0 = domingo
+      const weekday = jsDay === 0 ? 7 : jsDay;
+
+      return this.prisma.shift.deleteMany({
+        where: {
+          scheduleId,
+          weekday,
+          startTime: { gte: startTime },
+          endTime: { lte: endTime },
+        },
       });
     }
 
