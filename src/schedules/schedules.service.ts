@@ -69,110 +69,137 @@ export class SchedulesService {
      AÑADIR TURNO (BORRADOR)
   ====================================================== */
   async addShiftToSchedule(
-  scheduleId: string,
-  data: {
-    weekday: number;      // 1 = lunes ... 7 = domingo
-    startTime: string;
-    endTime: string;
-    validFrom: string;   // fecha inicio
-    validTo?: string;   // fecha fin o null
-  },
-) {
-  const { weekday, startTime, endTime, validFrom, validTo } = data;
-
-  if (weekday < 1 || weekday > 7) {
-    throw new BadRequestException('Día inválido');
-  }
-
-  if (startTime >= endTime) {
-    throw new BadRequestException(
-      'La hora de inicio debe ser anterior a la de fin',
-    );
-  }
-
-  const fromDate = new Date(validFrom);
-  const toDate = validTo ? new Date(validTo) : null;
-
-  if (toDate && fromDate > toDate) {
-    throw new BadRequestException(
-      'La fecha de inicio no puede ser posterior a la de fin',
-    );
-  }
-
-  // 🔒 REGLA DE ORO: NO SE PERMITE CREAR TURNOS EN EL PASADO
-  const today = new Date();
-  today.setHours(0, 0, 0, 0);
-
-  if (fromDate < today) {
-    throw new BadRequestException(
-      'No se pueden crear o modificar turnos en el pasado',
-    );
-  }
-
-  // 1️⃣ Buscar turnos existentes que puedan SOLAPAR en tiempo Y en fechas
-  const existingShifts = await this.prisma.shift.findMany({
-    where: {
-      scheduleId,
-      weekday,
-      AND: [
-        // solape de fechas
-        {
-          OR: [
-            // turno existente sin fin
-            {
-              validTo: null,
-            },
-            // o que su fin sea después de mi inicio
-            {
-              validTo: {
-                gte: validFrom,
-              },
-            },
-          ],
-        },
-        {
-          // mi fin es infinito o empieza antes de que termine el otro
-          OR: [
-            {
-              validTo: null,
-            },
-            {
-              validFrom: {
-                lte: validTo ?? undefined,
-              },
-            },
-          ],
-        },
-      ],
-    },
-  });
-
-  // 2️⃣ Comprobar solape horario dentro de los que solapan en fechas
-  const hasOverlap = existingShifts.some(shift => {
-    return (
-      startTime < shift.endTime &&
-      endTime > shift.startTime
-    );
-  });
-
-  if (hasOverlap) {
-    throw new BadRequestException(
-      'El turno se solapa con uno existente en esas fechas',
-    );
-  }
-
-  // 3️⃣ Crear turno nuevo (NUNCA TOCAMOS LOS ANTIGUOS)
-  return this.prisma.shift.create({
+    scheduleId: string,
     data: {
-      scheduleId,
-      weekday,
-      startTime,
-      endTime,
-      validFrom: fromDate,
-      validTo: toDate,
+      weekday: number;      // 1 = lunes ... 7 = domingo
+      startTime: string;
+      endTime: string;
+      validFrom: string;   // fecha inicio (YYYY-MM-DD)
+      validTo?: string;   // fecha fin o null
     },
-  });
-}
+  ) {
+    try {
+      console.log('🟡 ADD SHIFT SERVICE INPUT:', {
+        scheduleId,
+        data,
+      });
+
+      const { weekday, startTime, endTime, validFrom, validTo } = data;
+
+      // =========================
+      // VALIDACIONES BÁSICAS
+      // =========================
+
+      if (weekday < 1 || weekday > 7) {
+        throw new BadRequestException('Día inválido');
+      }
+
+      if (!startTime || !endTime) {
+        throw new BadRequestException('Horas inválidas');
+      }
+
+      if (startTime >= endTime) {
+        throw new BadRequestException(
+          'La hora de inicio debe ser anterior a la de fin',
+        );
+      }
+
+      if (!validFrom) {
+        throw new BadRequestException('validFrom es obligatorio');
+      }
+
+      const fromDate = new Date(validFrom);
+      const toDate = validTo ? new Date(validTo) : null;
+
+      if (toDate && fromDate > toDate) {
+        throw new BadRequestException(
+          'La fecha de inicio no puede ser posterior a la de fin',
+        );
+      }
+
+      // =========================
+      // 🔒 REGLA DE ORO: NO TOCAR EL PASADO
+      // =========================
+
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      if (fromDate < today) {
+        throw new BadRequestException(
+          'No se pueden crear o modificar turnos en el pasado',
+        );
+      }
+
+      // =========================
+      // BUSCAR TURNOS QUE SOLAPEN EN FECHAS (MISMO DÍA SEMANA)
+      // =========================
+
+      const existingShifts = await this.prisma.shift.findMany({
+        where: {
+          scheduleId,
+          weekday,
+
+          // Solape de rangos de fechas
+          AND: [
+            // El turno existente termina después de que empiece el nuevo
+            {
+              OR: [
+                { validTo: null },                 // turno abierto
+                { validTo: { gte: fromDate } },    // o acaba después de mi inicio
+              ],
+            },
+
+            // El turno existente empieza antes de que termine el nuevo
+            {
+              OR: [
+                { validFrom: { lte: toDate ?? undefined } }, // empieza antes de mi fin
+              ],
+            },
+          ],
+        },
+      });
+
+      // =========================
+      // COMPROBAR SOLAPE HORARIO
+      // =========================
+
+      const hasOverlap = existingShifts.some(shift => {
+        return (
+          startTime < shift.endTime &&
+          endTime > shift.startTime
+        );
+      });
+
+      if (hasOverlap) {
+        throw new BadRequestException(
+          'El turno se solapa con uno existente en esas fechas',
+        );
+      }
+
+      // =========================
+      // CREAR TURNO NUEVO (NUNCA TOCAMOS LOS ANTIGUOS)
+      // =========================
+
+      const created = await this.prisma.shift.create({
+        data: {
+          scheduleId,
+          weekday,
+          startTime,
+          endTime,
+          validFrom: fromDate,
+          validTo: toDate,
+        },
+      });
+
+      console.log('🟢 TURNO CREADO:', created);
+
+      return created;
+
+    } catch (err) {
+      console.error('❌ ERROR EN addShiftToSchedule:', err);
+      throw err;
+    }
+  }
 
   /* ======================================================
        AÑADIR VACACIONES (BORRADOR)
@@ -300,12 +327,16 @@ export class SchedulesService {
       },
     });
 
-    console.log('🟥 BACKEND SCHEDULE ACTIVO:', schedule?.id);
-    console.log('🟥 BACKEND SHIFTS CRUDOS:', schedule?.shifts);
+    console.log('🟥 BACKEND SCHEDULE ACTIVO:', schedule?.id || null);
+    console.log('🟥 BACKEND SHIFTS CRUDOS:', schedule?.shifts || []);
+
+    // 🔑 CLAVE: devolver null explícito si no hay horario
+    if (!schedule) {
+      return null;
+    }
 
     return schedule;
   }
-
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
      ¿Tenía que trabajar este usuario en esta fecha?
@@ -361,95 +392,95 @@ export class SchedulesService {
     return d;
   }
 
-/* ======================================================
-   ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
-====================================================== */
-async deleteShifts(
-  scheduleId: string,
-  body: {
-    source: 'PANEL' | 'CALENDAR';
-    mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
-    dateFrom?: string;
-    dateTo?: string;
-    startTime?: string;
-    endTime?: string;
-    shiftId?: string;
-  },
-) {
-  const { mode, dateFrom, startTime, endTime } = body;
+  /* ======================================================
+     ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
+  ====================================================== */
+  async deleteShifts(
+    scheduleId: string,
+    body: {
+      source: 'PANEL' | 'CALENDAR';
+      mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
+      dateFrom?: string;
+      dateTo?: string;
+      startTime?: string;
+      endTime?: string;
+      shiftId?: string;
+    },
+  ) {
+    const { mode, dateFrom, startTime, endTime } = body;
 
-  if (!dateFrom || !startTime || !endTime) {
-    throw new BadRequestException(
-      'dateFrom, startTime y endTime son obligatorios',
-    );
-  }
-
-  // 🔑 FECHAS CLAVE
-  const todayStr = new Date().toISOString().slice(0, 10);
-  const baseDate = new Date(dateFrom);
-
-  // calcular weekday (1 = lunes ... 7 = domingo)
-  const jsDay = baseDate.getDay(); // 0 = domingo
-  const weekday = jsDay === 0 ? 7 : jsDay;
-
-  // ======================================================
-  // 🟢 CASO 1 — SOLO ESTE BLOQUE (UNA RECURRENCIA EXACTA)
-  // ======================================================
-  if (mode === 'ONLY_THIS_BLOCK') {
-    console.log('🟥 BACKEND ONLY_THIS_BLOCK → borrando solo este patrón', {
-      weekday,
-      startTime,
-      endTime,
-    });
-
-    return this.prisma.shift.deleteMany({
-      where: {
-        scheduleId,
-        weekday,
-        startTime: startTime,   // 👈 EXACTO, NO gte
-        endTime: endTime,       // 👈 EXACTO, NO lte
-      },
-    });
-  }
-
-  // ======================================================
-  // 🟢 CASO 2 — FROM_THIS_DAY_ON
-  // ======================================================
-  if (mode === 'FROM_THIS_DAY_ON') {
-    // 🔒 NUNCA BORRAR PASADO
-    if (dateFrom < todayStr) {
-      console.log('⛔ INTENTO DE BORRAR PASADO BLOQUEADO', {
-        dateFrom,
-        todayStr,
-      });
-      return { count: 0 };
+    if (!dateFrom || !startTime || !endTime) {
+      throw new BadRequestException(
+        'dateFrom, startTime y endTime son obligatorios',
+      );
     }
 
-    console.log('🟥 BACKEND FROM_THIS_DAY_ON → borrando recurrencia futura', {
-      weekday,
-      startTime,
-      endTime,
-      desde: dateFrom,
-    });
+    // 🔑 FECHAS CLAVE
+    const todayStr = new Date().toISOString().slice(0, 10);
+    const baseDate = new Date(dateFrom);
 
-    // ⚠️ En tu modelo actual solo podemos borrar la recurrencia completa
-    // de ese weekday + horario (porque no hay fecha en shift)
+    // calcular weekday (1 = lunes ... 7 = domingo)
+    const jsDay = baseDate.getDay(); // 0 = domingo
+    const weekday = jsDay === 0 ? 7 : jsDay;
 
-    return this.prisma.shift.deleteMany({
-      where: {
-        scheduleId,
+    // ======================================================
+    // 🟢 CASO 1 — SOLO ESTE BLOQUE (UNA RECURRENCIA EXACTA)
+    // ======================================================
+    if (mode === 'ONLY_THIS_BLOCK') {
+      console.log('🟥 BACKEND ONLY_THIS_BLOCK → borrando solo este patrón', {
         weekday,
-        startTime: startTime,
-        endTime: endTime,
-      },
-    });
-  }
+        startTime,
+        endTime,
+      });
 
-  // ======================================================
-  // OTROS MODOS (de momento no soportados aquí)
-  // ======================================================
-  throw new BadRequestException('Modo de borrado no soportado');
-}
+      return this.prisma.shift.deleteMany({
+        where: {
+          scheduleId,
+          weekday,
+          startTime: startTime,   // 👈 EXACTO, NO gte
+          endTime: endTime,       // 👈 EXACTO, NO lte
+        },
+      });
+    }
+
+    // ======================================================
+    // 🟢 CASO 2 — FROM_THIS_DAY_ON
+    // ======================================================
+    if (mode === 'FROM_THIS_DAY_ON') {
+      // 🔒 NUNCA BORRAR PASADO
+      if (dateFrom < todayStr) {
+        console.log('⛔ INTENTO DE BORRAR PASADO BLOQUEADO', {
+          dateFrom,
+          todayStr,
+        });
+        return { count: 0 };
+      }
+
+      console.log('🟥 BACKEND FROM_THIS_DAY_ON → borrando recurrencia futura', {
+        weekday,
+        startTime,
+        endTime,
+        desde: dateFrom,
+      });
+
+      // ⚠️ En tu modelo actual solo podemos borrar la recurrencia completa
+      // de ese weekday + horario (porque no hay fecha en shift)
+
+      return this.prisma.shift.deleteMany({
+        where: {
+          scheduleId,
+          weekday,
+          startTime: startTime,
+          endTime: endTime,
+        },
+      });
+    }
+
+    // ======================================================
+    // OTROS MODOS (de momento no soportados aquí)
+    // ======================================================
+    throw new BadRequestException('Modo de borrado no soportado');
+  }
 
   /* ======================================================
    ELIMINAR VACACIONES

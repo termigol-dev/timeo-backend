@@ -53,15 +53,13 @@ export class SchedulesController {
   )
   addShift(
     @Param('scheduleId') scheduleId: string,
-    @Body()
-    body: {
-      weekday: number;
-      startTime: string;
-      endTime: string;
-      validFrom: string;
-      validTo?: string;
-    },
+    @Body() body,
   ) {
+    console.log('🟡 ADD SHIFT CONTROLLER:', {
+      scheduleId,
+      body,
+    });
+
     return this.schedulesService.addShiftToSchedule(
       scheduleId,
       body,
