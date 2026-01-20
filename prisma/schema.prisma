@@ -187,10 +187,16 @@ model Shift {
   weekday    Int    // 1 = lunes ... 7 = domingo
   startTime  String // "09:00"
   endTime    String // "13:00"
+  validFrom  DateTime
+  validTo    DateTime?
 
   schedule Schedule @relation(fields: [scheduleId], references: [id])
 
   @@index([scheduleId])
+  @@index([weekday])
+  @@index([validFrom])
+  @@index([validTo])
+  
 }
 
 model ScheduleException {
