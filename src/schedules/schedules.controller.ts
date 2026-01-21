@@ -109,17 +109,17 @@ export class SchedulesController {
   }
 
   /* ======================================================
-     CONFIRMAR HORARIO
-  ====================================================== */
-  @Post(':scheduleId/confirm')
-  @Roles(
-    Role.SUPERADMIN,
-    Role.ADMIN_EMPRESA,
-    Role.ADMIN_SUCURSAL,
-  )
-  confirm(@Param('scheduleId') scheduleId: string) {
-    return this.schedulesService.confirmSchedule(scheduleId, Body);
-  }
+   CONFIRMAR HORARIO
+====================================================== */
+@Post(':scheduleId/confirm')
+@Roles(
+  Role.SUPERADMIN,
+  Role.ADMIN_EMPRESA,
+  Role.ADMIN_SUCURSAL,
+)
+confirm(@Param('scheduleId') scheduleId: string) {
+  return this.schedulesService.confirmSchedule(scheduleId);
+}
 
   /* ======================================================
      VER HORARIO ACTIVO (EMPLEADO / ADMIN)

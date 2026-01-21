@@ -274,24 +274,12 @@ export class SchedulesService {
      - Cierra horarios anteriores
      - Activa este
   ====================================================== */
-  async confirmSchedule(
-  scheduleId: string,
-  body: {
-    removedTurns: {
-      weekday: number;
-      startTime: string;
-      endTime: string;
-      validFrom?: string;
-    }[];
-    newTurns: {
-      weekday: number;
-      startTime: string;
-      endTime: string;
-      validFrom: string;
-      validTo?: string;
-    }[];
-  },
-) {
+/* ======================================================
+   CONFIRMAR HORARIO
+   - Cierra horarios anteriores
+   - Activa este
+====================================================== */
+async confirmSchedule(scheduleId: string) {
   const schedule = await this.prisma.schedule.findUnique({
     where: { id: scheduleId },
   });
@@ -300,42 +288,7 @@ export class SchedulesService {
     throw new NotFoundException('Horario no encontrado');
   }
 
-  const { removedTurns, newTurns } = body;
-
-  // =========================
-  // 1️⃣ BORRAR TURNOS ANTIGUOS EDITADOS
-  // =========================
-  for (const rt of removedTurns) {
-    await this.prisma.shift.deleteMany({
-      where: {
-        scheduleId,
-        weekday: rt.weekday,
-        startTime: rt.startTime,
-        endTime: rt.endTime,
-        ...(rt.validFrom && { validFrom: new Date(rt.validFrom) }),
-      },
-    });
-  }
-
-  // =========================
-  // 2️⃣ CREAR TURNOS NUEVOS
-  // =========================
-  for (const nt of newTurns) {
-    await this.prisma.shift.create({
-      data: {
-        scheduleId,
-        weekday: nt.weekday,
-        startTime: nt.startTime,
-        endTime: nt.endTime,
-        validFrom: new Date(nt.validFrom),
-        validTo: nt.validTo ? new Date(nt.validTo) : null,
-      },
-    });
-  }
-
-  // =========================
-  // 3️⃣ CERRAR OTROS SCHEDULES ACTIVOS
-  // =========================
+  // 1️⃣ Cerrar otros schedules activos del mismo usuario
   await this.prisma.schedule.updateMany({
     where: {
       userId: schedule.userId,
@@ -345,9 +298,7 @@ export class SchedulesService {
     data: { validTo: new Date() },
   });
 
-  // =========================
-  // 4️⃣ CONFIRMAR ESTE SCHEDULE
-  // =========================
+  // 2️⃣ Activar este schedule
   return this.prisma.schedule.update({
     where: { id: schedule.id },
     data: {
