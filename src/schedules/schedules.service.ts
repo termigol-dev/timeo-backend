@@ -274,40 +274,88 @@ export class SchedulesService {
      - Cierra horarios anteriores
      - Activa este
   ====================================================== */
-  async confirmSchedule(scheduleId: string) {
-    const schedule = await this.prisma.schedule.findUnique({
-      where: { id: scheduleId },
-      include: { shifts: true },
-    });
+  async confirmSchedule(
+  scheduleId: string,
+  body: {
+    removedTurns: {
+      weekday: number;
+      startTime: string;
+      endTime: string;
+      validFrom?: string;
+    }[];
+    newTurns: {
+      weekday: number;
+      startTime: string;
+      endTime: string;
+      validFrom: string;
+      validTo?: string;
+    }[];
+  },
+) {
+  const schedule = await this.prisma.schedule.findUnique({
+    where: { id: scheduleId },
+  });
 
-    if (!schedule) {
-      throw new NotFoundException('Horario no encontrado');
-    }
+  if (!schedule) {
+    throw new NotFoundException('Horario no encontrado');
+  }
 
-    /*if (schedule.shifts.length === 0) {
-      throw new BadRequestException(
-        'El horario no tiene turnos',
-      );
-    }*/
+  const { removedTurns, newTurns } = body;
 
-    await this.prisma.schedule.updateMany({
+  // =========================
+  // 1️⃣ BORRAR TURNOS ANTIGUOS EDITADOS
+  // =========================
+  for (const rt of removedTurns) {
+    await this.prisma.shift.deleteMany({
       where: {
-        userId: schedule.userId,
-        validTo: null,
-        NOT: { id: schedule.id },
-      },
-      data: { validTo: new Date() },
-    });
-
-    return this.prisma.schedule.update({
-      where: { id: schedule.id },
-      data: {
-        validFrom: new Date(),
-        validTo: null,
+        scheduleId,
+        weekday: rt.weekday,
+        startTime: rt.startTime,
+        endTime: rt.endTime,
+        ...(rt.validFrom && { validFrom: new Date(rt.validFrom) }),
       },
     });
   }
 
+  // =========================
+  // 2️⃣ CREAR TURNOS NUEVOS
+  // =========================
+  for (const nt of newTurns) {
+    await this.prisma.shift.create({
+      data: {
+        scheduleId,
+        weekday: nt.weekday,
+        startTime: nt.startTime,
+        endTime: nt.endTime,
+        validFrom: new Date(nt.validFrom),
+        validTo: nt.validTo ? new Date(nt.validTo) : null,
+      },
+    });
+  }
+
+  // =========================
+  // 3️⃣ CERRAR OTROS SCHEDULES ACTIVOS
+  // =========================
+  await this.prisma.schedule.updateMany({
+    where: {
+      userId: schedule.userId,
+      validTo: null,
+      NOT: { id: schedule.id },
+    },
+    data: { validTo: new Date() },
+  });
+
+  // =========================
+  // 4️⃣ CONFIRMAR ESTE SCHEDULE
+  // =========================
+  return this.prisma.schedule.update({
+    where: { id: schedule.id },
+    data: {
+      validFrom: new Date(),
+      validTo: null,
+    },
+  });
+}
   /* ======================================================
      OBTENER HORARIO ACTIVO
   ====================================================== */
