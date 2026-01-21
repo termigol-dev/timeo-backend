@@ -118,7 +118,7 @@ export class SchedulesController {
     Role.ADMIN_SUCURSAL,
   )
   confirm(@Param('scheduleId') scheduleId: string) {
-    return this.schedulesService.confirmSchedule(scheduleId);
+    return this.schedulesService.confirmSchedule(scheduleId, Body);
   }
 
   /* ======================================================
