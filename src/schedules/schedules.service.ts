@@ -274,39 +274,39 @@ export class SchedulesService {
      - Cierra horarios anteriores
      - Activa este
   ====================================================== */
-/* ======================================================
-   CONFIRMAR HORARIO
-   - Cierra horarios anteriores
-   - Activa este
-====================================================== */
-async confirmSchedule(scheduleId: string) {
-  const schedule = await this.prisma.schedule.findUnique({
-    where: { id: scheduleId },
-  });
+  /* ======================================================
+     CONFIRMAR HORARIO
+     - Cierra horarios anteriores
+     - Activa este
+  ====================================================== */
+  async confirmSchedule(scheduleId: string) {
+    const schedule = await this.prisma.schedule.findUnique({
+      where: { id: scheduleId },
+    });
 
-  if (!schedule) {
-    throw new NotFoundException('Horario no encontrado');
+    if (!schedule) {
+      throw new NotFoundException('Horario no encontrado');
+    }
+
+    // 1️⃣ Cerrar otros schedules activos del mismo usuario
+    await this.prisma.schedule.updateMany({
+      where: {
+        userId: schedule.userId,
+        validTo: null,
+        NOT: { id: schedule.id },
+      },
+      data: { validTo: new Date() },
+    });
+
+    // 2️⃣ Activar este schedule
+    return this.prisma.schedule.update({
+      where: { id: schedule.id },
+      data: {
+        validFrom: new Date(),
+        validTo: null,
+      },
+    });
   }
-
-  // 1️⃣ Cerrar otros schedules activos del mismo usuario
-  await this.prisma.schedule.updateMany({
-    where: {
-      userId: schedule.userId,
-      validTo: null,
-      NOT: { id: schedule.id },
-    },
-    data: { validTo: new Date() },
-  });
-
-  // 2️⃣ Activar este schedule
-  return this.prisma.schedule.update({
-    where: { id: schedule.id },
-    data: {
-      validFrom: new Date(),
-      validTo: null,
-    },
-  });
-}
   /* ======================================================
      OBTENER HORARIO ACTIVO
   ====================================================== */
@@ -422,26 +422,32 @@ async confirmSchedule(scheduleId: string) {
     const jsDay = baseDate.getDay(); // 0 = domingo
     const weekday = jsDay === 0 ? 7 : jsDay;
 
-    // ======================================================
-    // 🟢 CASO 1 — SOLO ESTE BLOQUE (UNA RECURRENCIA EXACTA)
-    // ======================================================
-    if (mode === 'ONLY_THIS_BLOCK') {
-      console.log('🟥 BACKEND ONLY_THIS_BLOCK → borrando solo este patrón', {
-        weekday,
-        startTime,
-        endTime,
-      });
+   // ======================================================
+// 🟢 CASO 1 — SOLO ESTE BLOQUE (UNA RECURRENCIA EXACTA)
+// ======================================================
+if (mode === 'ONLY_THIS_BLOCK') {
+  console.log('🟡 ONLY_THIS_BLOCK → creando excepción, NO borramos shift', {
+    scheduleId,
+    weekday,
+    startTime,
+    endTime,
+    dateFrom,
+  });
 
-      return this.prisma.shift.deleteMany({
-        where: {
-          scheduleId,
-          weekday,
-          startTime: startTime,   // 👈 EXACTO, NO gte
-          endTime: endTime,       // 👈 EXACTO, NO lte
-        },
-      });
-    }
+  const date = new Date(dateFrom);
+  date.setHours(0, 0, 0, 0);
 
+  // Creamos una excepción para ese día concreto
+  return this.prisma.scheduleException.create({
+    data: {
+      scheduleId,
+      date,
+      startTime,
+      endTime,
+      type: 'MODIFIED_SHIFT', // 🔥 CLAVE: nunca DELETE_SHIFT
+    },
+  });
+}
     // ======================================================
     // 🟢 CASO 2 — FROM_THIS_DAY_ON
     // ======================================================

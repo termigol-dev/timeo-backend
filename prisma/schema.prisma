@@ -260,6 +260,7 @@ enum IncidentResponse {
 enum ScheduleExceptionType {
   EXTRA_SHIFT    // horas extra
   MODIFIED_SHIFT // cambia horario habitual
+  SHIFT_OFF
   DAY_OFF        // no trabaja ese día
   VACATION       // vacaciones
 }
