@@ -422,37 +422,37 @@ export class SchedulesService {
     const jsDay = baseDate.getDay(); // 0 = domingo
     const weekday = jsDay === 0 ? 7 : jsDay;
 
-   // ======================================================
-// 🟢 CASO 1 — SOLO ESTE BLOQUE (UNA RECURRENCIA EXACTA)
-// ======================================================
-if (mode === 'ONLY_THIS_BLOCK') {
-  console.log('🟡 ONLY_THIS_BLOCK → creando excepción, NO borramos shift', {
-    scheduleId,
-    weekday,
-    startTime,
-    endTime,
-    dateFrom,
-  });
-
-  const date = new Date(dateFrom);
-  date.setHours(0, 0, 0, 0);
-
-  // Creamos una excepción para ese día concreto
-  return this.prisma.scheduleException.create({
-    data: {
-      scheduleId,
-      date,
-      startTime,
-      endTime,
-      type: 'MODIFIED_SHIFT', // 🔥 CLAVE: nunca DELETE_SHIFT
-    },
-  });
-}
     // ======================================================
-    // 🟢 CASO 2 — FROM_THIS_DAY_ON
+    // 🟢 CASO 1 — SOLO ESTE BLOQUE (UNA RECURRENCIA EXACTA)
+    // ======================================================
+    if (mode === 'ONLY_THIS_BLOCK') {
+      console.log('🟡 ONLY_THIS_BLOCK → creando excepción, NO borramos shift', {
+        scheduleId,
+        weekday,
+        startTime,
+        endTime,
+        dateFrom,
+      });
+
+      const date = new Date(dateFrom);
+      date.setHours(0, 0, 0, 0);
+
+      // Creamos una excepción para ese día concreto
+      return this.prisma.scheduleException.create({
+        data: {
+          scheduleId,
+          date,
+          startTime,
+          endTime,
+          type: 'MODIFIED_SHIFT', // 🔥 CLAVE: nunca DELETE_SHIFT
+        },
+      });
+    }
+    // ======================================================
+    // 🟢 CASO 2 — FROM_THIS_DAY_ON (cerrar turno desde esta fecha)
     // ======================================================
     if (mode === 'FROM_THIS_DAY_ON') {
-      // 🔒 NUNCA BORRAR PASADO
+      // 🔒 NUNCA PERMITIR MODIFICAR PASADO
       if (dateFrom < todayStr) {
         console.log('⛔ INTENTO DE BORRAR PASADO BLOQUEADO', {
           dateFrom,
@@ -461,22 +461,53 @@ if (mode === 'ONLY_THIS_BLOCK') {
         return { count: 0 };
       }
 
-      console.log('🟥 BACKEND FROM_THIS_DAY_ON → borrando recurrencia futura', {
+      console.log('🟥 BACKEND FROM_THIS_DAY_ON → cerrando turno desde esta fecha', {
         weekday,
         startTime,
         endTime,
         desde: dateFrom,
       });
 
-      // ⚠️ En tu modelo actual solo podemos borrar la recurrencia completa
-      // de ese weekday + horario (porque no hay fecha en shift)
+      const date = new Date(dateFrom);
+      date.setHours(0, 0, 0, 0);
 
-      return this.prisma.shift.deleteMany({
+      // 1️⃣ Buscar el shift activo que aplica en esa fecha
+      const shift = await this.prisma.shift.findFirst({
         where: {
           scheduleId,
           weekday,
-          startTime: startTime,
-          endTime: endTime,
+          startTime,
+          endTime,
+          validFrom: { lte: date },
+          OR: [
+            { validTo: null },
+            { validTo: { gte: date } },
+          ],
+        },
+        orderBy: {
+          validFrom: 'desc',
+        },
+      });
+
+      if (!shift) {
+        console.log('⚠️ No se encontró shift activo para cerrar', {
+          scheduleId,
+          weekday,
+          startTime,
+          endTime,
+          dateFrom,
+        });
+        return { count: 0 };
+      }
+
+      // 2️⃣ Cerrar su vigencia el día anterior
+      const dayBefore = new Date(date);
+      dayBefore.setDate(dayBefore.getDate() - 1);
+
+      return this.prisma.shift.update({
+        where: { id: shift.id },
+        data: {
+          validTo: dayBefore,
         },
       });
     }
