@@ -347,23 +347,51 @@ export class SchedulesService {
       mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
     }[],
   ) {
-    console.log('🟥 ADD EXCEPTIONS SERVICE:', {
-      scheduleId,
-      exceptions,
-    });
-
-    return this.prisma.scheduleException.createMany({
-      data: exceptions.map(ex => ({
+    try {
+      console.log('🟥 ADD EXCEPTIONS SERVICE INPUT:', {
         scheduleId,
-        type: ex.type,
-        date: new Date(ex.date),
-        startTime: ex.startTime,
-        endTime: ex.endTime,
-        mode: ex.mode,
-      })),
-    });
-  }
+        exceptions,
+        first: exceptions?.[0],
+        dateType: typeof exceptions?.[0]?.date,
+      });
 
+      const data = exceptions.map(ex => {
+        const parsedDate = new Date(ex.date);
+
+        console.log('🟣 MAPEANDO EXCEPCIÓN:', {
+          rawDate: ex.date,
+          parsedDate,
+          isValid: !isNaN(parsedDate.getTime()),
+          type: ex.type,
+          startTime: ex.startTime,
+          endTime: ex.endTime,
+          mode: ex.mode,
+        });
+
+        return {
+          scheduleId,
+          type: ex.type,
+          date: parsedDate,
+          startTime: ex.startTime || null,
+          endTime: ex.endTime || null,
+          mode: ex.mode,
+        };
+      });
+
+      console.log('🟡 DATA FINAL PARA PRISMA:', data);
+
+      const result = await this.prisma.scheduleException.createMany({
+        data,
+      });
+
+      console.log('🟢 ADD EXCEPTIONS OK:', result);
+      return result;
+
+    } catch (err) {
+      console.error('❌ ADD EXCEPTIONS FAILED FULL ERROR:', err);
+      throw err;
+    }
+  }
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
      ¿Tenía que trabajar este usuario en esta fecha?

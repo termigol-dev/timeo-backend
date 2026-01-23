@@ -111,15 +111,15 @@ export class SchedulesController {
   /* ======================================================
    CONFIRMAR HORARIO
 ====================================================== */
-@Post(':scheduleId/confirm')
-@Roles(
-  Role.SUPERADMIN,
-  Role.ADMIN_EMPRESA,
-  Role.ADMIN_SUCURSAL,
-)
-confirm(@Param('scheduleId') scheduleId: string) {
-  return this.schedulesService.confirmSchedule(scheduleId);
-}
+  @Post(':scheduleId/confirm')
+  @Roles(
+    Role.SUPERADMIN,
+    Role.ADMIN_EMPRESA,
+    Role.ADMIN_SUCURSAL,
+  )
+  confirm(@Param('scheduleId') scheduleId: string) {
+    return this.schedulesService.confirmSchedule(scheduleId);
+  }
 
   /* ======================================================
      VER HORARIO ACTIVO (EMPLEADO / ADMIN)
@@ -136,8 +136,8 @@ confirm(@Param('scheduleId') scheduleId: string) {
   }
 
   /* ======================================================
-     🆕 AÑADIR EXCEPCIONES DE TURNO (Modified / Extra / DayOff)
-  ====================================================== */
+    🆕 AÑADIR EXCEPCIONES DE TURNO
+ ====================================================== */
   @Post(':scheduleId/exceptions')
   @Roles(
     Role.SUPERADMIN,
@@ -150,7 +150,7 @@ confirm(@Param('scheduleId') scheduleId: string) {
     body: {
       exceptions: {
         type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF';
-        date: string;            // YYYY-MM-DD
+        date: string;
         startTime?: string;
         endTime?: string;
         mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
@@ -167,7 +167,6 @@ confirm(@Param('scheduleId') scheduleId: string) {
       body.exceptions,
     );
   }
-
 
   /* ======================================================
      AÑADIR VACACIONES
