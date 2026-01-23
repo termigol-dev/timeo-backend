@@ -336,6 +336,34 @@ export class SchedulesService {
 
     return schedule;
   }
+  /* AÑADIR EXCEPCIONES*/
+  async addExceptions(
+    scheduleId: string,
+    exceptions: {
+      type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF';
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+    }[],
+  ) {
+    console.log('🟥 ADD EXCEPTIONS SERVICE:', {
+      scheduleId,
+      exceptions,
+    });
+
+    return this.prisma.scheduleException.createMany({
+      data: exceptions.map(ex => ({
+        scheduleId,
+        type: ex.type,
+        date: new Date(ex.date),
+        startTime: ex.startTime,
+        endTime: ex.endTime,
+        mode: ex.mode,
+      })),
+    });
+  }
+
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
      ¿Tenía que trabajar este usuario en esta fecha?

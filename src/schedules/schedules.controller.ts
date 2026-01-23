@@ -136,6 +136,40 @@ confirm(@Param('scheduleId') scheduleId: string) {
   }
 
   /* ======================================================
+     🆕 AÑADIR EXCEPCIONES DE TURNO (Modified / Extra / DayOff)
+  ====================================================== */
+  @Post(':scheduleId/exceptions')
+  @Roles(
+    Role.SUPERADMIN,
+    Role.ADMIN_EMPRESA,
+    Role.ADMIN_SUCURSAL,
+  )
+  addExceptions(
+    @Param('scheduleId') scheduleId: string,
+    @Body()
+    body: {
+      exceptions: {
+        type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF';
+        date: string;            // YYYY-MM-DD
+        startTime?: string;
+        endTime?: string;
+        mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+      }[];
+    },
+  ) {
+    console.log('🟥 ADD EXCEPTIONS CONTROLLER:', {
+      scheduleId,
+      exceptions: body.exceptions,
+    });
+
+    return this.schedulesService.addExceptions(
+      scheduleId,
+      body.exceptions,
+    );
+  }
+
+
+  /* ======================================================
      AÑADIR VACACIONES
   ====================================================== */
   @Post(':scheduleId/vacations')
