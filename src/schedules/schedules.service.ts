@@ -370,7 +370,7 @@ export class SchedulesService {
         scheduleId,
         type: ex.type,
         date: new Date(ex.date),
-        //day: ex.day,                 
+        //day: ex.day,     fdfdsefsfsfsf            
         startTime: ex.startTime,
         endTime: ex.endTime,
       };
