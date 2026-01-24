@@ -336,62 +336,54 @@ export class SchedulesService {
 
     return schedule;
   }
-  /* AÑADIR EXCEPCIONES*/
+
+  /* AÑADIR EXCEPCIONES */
   async addExceptions(
     scheduleId: string,
     exceptions: {
       type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF';
       date: string;
+      //day: string;                // 👈 IMPORTANTE
       startTime?: string;
       endTime?: string;
-      mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+      //mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
     }[],
   ) {
-    try {
-      console.log('🟥 ADD EXCEPTIONS SERVICE INPUT:', {
+    console.log('🟥 ADD EXCEPTIONS SERVICE INPUT:', {
+      scheduleId,
+      count: exceptions.length,
+      exceptions,
+    });
+
+    const data = exceptions.map((ex, i) => {
+      console.log('🟣 MAPEANDO EXCEPCIÓN', i, {
+        type: ex.type,
+        date: ex.date,
+        //day: ex.day,
+        startTime: ex.startTime,
+        endTime: ex.endTime,
+      });
+
+      
+
+      return {
         scheduleId,
-        exceptions,
-        first: exceptions?.[0],
-        dateType: typeof exceptions?.[0]?.date,
-      });
+        type: ex.type,
+        date: new Date(ex.date),
+        //day: ex.day,                 
+        startTime: ex.startTime,
+        endTime: ex.endTime,
+      };
+    });
 
-      const data = exceptions.map(ex => {
-        const parsedDate = new Date(ex.date);
+    console.log('🟡 DATA FINAL PARA PRISMA:', data);
+    console.log('🚀 INSERTANDO EXCEPCIONES EN DB:', JSON.stringify(data, null, 2));
 
-        console.log('🟣 MAPEANDO EXCEPCIÓN:', {
-          rawDate: ex.date,
-          parsedDate,
-          isValid: !isNaN(parsedDate.getTime()),
-          type: ex.type,
-          startTime: ex.startTime,
-          endTime: ex.endTime,
-          mode: ex.mode,
-        });
-
-        return {
-          scheduleId,
-          type: ex.type,
-          date: parsedDate,
-          startTime: ex.startTime || null,
-          endTime: ex.endTime || null,
-          mode: ex.mode,
-        };
-      });
-
-      console.log('🟡 DATA FINAL PARA PRISMA:', data);
-
-      const result = await this.prisma.scheduleException.createMany({
-        data,
-      });
-
-      console.log('🟢 ADD EXCEPTIONS OK:', result);
-      return result;
-
-    } catch (err) {
-      console.error('❌ ADD EXCEPTIONS FAILED FULL ERROR:', err);
-      throw err;
-    }
+    return this.prisma.scheduleException.createMany({
+      data,
+    });
   }
+
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
      ¿Tenía que trabajar este usuario en esta fecha?

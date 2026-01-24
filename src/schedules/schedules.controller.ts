@@ -153,7 +153,7 @@ export class SchedulesController {
         date: string;
         startTime?: string;
         endTime?: string;
-        mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+        //mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
       }[];
     },
   ) {
