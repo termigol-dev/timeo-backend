@@ -7,7 +7,9 @@ import {
   Param,
   Req,
   UseGuards,
+  Query,
 } from '@nestjs/common';
+
 import { SchedulesService } from './schedules.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -124,16 +126,21 @@ export class SchedulesController {
   /* ======================================================
      VER HORARIO ACTIVO (EMPLEADO / ADMIN)
   ====================================================== */
-  @Get('user/:userId/active')
-  @Roles(
+@Get('user/:userId/active')
+@Roles(
     Role.SUPERADMIN,
     Role.ADMIN_EMPRESA,
     Role.ADMIN_SUCURSAL,
     Role.EMPLEADO,
   )
-  getActiveSchedule(@Param('userId') userId: string) {
-    return this.schedulesService.getActiveSchedule(userId);
-  }
+getActiveSchedule(
+  @Param('userId') userId: string,
+  @Query('weekStart') weekStart?: string,
+) {
+  console.log('📅 CONTROLLER getActiveSchedule', { userId, weekStart });
+
+  return this.schedulesService.getActiveSchedule(userId, weekStart);
+}
 
   /* ======================================================
     🆕 AÑADIR EXCEPCIONES DE TURNO
@@ -213,3 +220,6 @@ export class SchedulesController {
     );
   }
 }
+/* ======================================================
+   OBTENER TURNOS
+====================================================== */

@@ -310,6 +310,7 @@ export class SchedulesService {
   /* ======================================================
      OBTENER HORARIO ACTIVO
   ====================================================== */
+  /*VIEJA 
   async getActiveSchedule(userId: string) {
     const schedule = await this.prisma.schedule.findFirst({
       where: {
@@ -338,6 +339,127 @@ export class SchedulesService {
   }
 
   /* AÑADIR EXCEPCIONES */
+
+  async getActiveSchedule(userId: string, weekStartStr?: string) {
+
+    // 1️⃣ Obtener horario activo
+    const schedule = await this.prisma.schedule.findFirst({
+      where: {
+        userId,
+        validFrom: { lte: new Date() },
+        OR: [
+          { validTo: null },
+          { validTo: { gte: new Date() } },
+        ],
+      },
+      include: {
+        shifts: true,
+        exceptions: true,
+      },
+    });
+
+    if (!schedule) {
+      return { days: [] };
+    }
+
+    // 2️⃣ Calcular semana base (lunes)
+    const weekStart = weekStartStr
+      ? new Date(weekStartStr + 'T00:00:00')
+      : (() => {
+        const d = new Date();
+        const day = d.getDay(); // 0 domingo, 1 lunes...
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        return new Date(d.setDate(diff));
+      })();
+
+    const days = [];
+
+    // 🔁 Recorremos lunes → domingo
+    for (let i = 0; i < 7; i++) {
+
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + i);
+      date.setHours(0, 0, 0, 0);
+
+      const dateStr = date.toISOString().slice(0, 10);
+
+      // weekday: 1 = lunes ... 7 = domingo
+      const jsDay = date.getDay(); // 0 domingo
+      const weekday = jsDay === 0 ? 7 : jsDay;
+
+      // 3️⃣ Shifts que aplican ese día por vigencia
+      const activeShifts = schedule.shifts.filter(shift => {
+        const from = new Date(shift.validFrom);
+        const to = shift.validTo ? new Date(shift.validTo) : null;
+
+        from.setHours(0, 0, 0, 0);
+        if (to) to.setHours(0, 0, 0, 0);
+
+        const inRange = from <= date && (!to || to >= date);
+
+        return inRange && shift.weekday === weekday;
+      });
+
+      // 4️⃣ Excepciones de ese día exacto
+      const dayExceptions = schedule.exceptions.filter(ex => {
+        const exDate = new Date(ex.date);
+        exDate.setHours(0, 0, 0, 0);
+        return exDate.getTime() === date.getTime();
+      });
+
+      // 5️⃣ Aplicar reglas
+      let finalTurns = activeShifts.map(s => ({
+        startTime: s.startTime,
+        endTime: s.endTime,
+        source: 'regular',
+      }));
+
+      let isDayOff = false;
+
+      for (const ex of dayExceptions) {
+
+        if (ex.type === 'DAY_OFF') {
+          isDayOff = true;
+          finalTurns = [];
+          break;
+        }
+
+        if (ex.type === 'MODIFIED_SHIFT') {
+          finalTurns = finalTurns.filter(t =>
+            !(
+              t.startTime === ex.startTime &&
+              t.endTime === ex.endTime
+            )
+          );
+        }
+
+        if (ex.type === 'EXTRA_SHIFT') {
+          finalTurns.push({
+            startTime: ex.startTime,
+            endTime: ex.endTime,
+            source: 'extra',
+          });
+        }
+      }
+
+      days.push({
+        date: dateStr,
+        weekday,
+        turns: finalTurns,
+        isDayOff,
+      });
+    }
+
+    // 6️⃣ Resultado final de la semana
+    return {
+      scheduleId: schedule.id,
+      weekStart: weekStart.toISOString().slice(0, 10),
+      days,
+    };
+  }
+
+
+  
   async addExceptions(
     scheduleId: string,
     exceptions: {
@@ -364,7 +486,7 @@ export class SchedulesService {
         endTime: ex.endTime,
       });
 
-      
+
 
       return {
         scheduleId,
