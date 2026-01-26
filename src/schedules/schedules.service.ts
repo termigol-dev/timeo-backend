@@ -367,12 +367,8 @@ export class SchedulesService {
         const from = new Date(shift.validFrom);
         const to = shift.validTo ? new Date(shift.validTo) : null;
 
-        // Normalizamos SOLO from a inicio de día
         from.setHours(0, 0, 0, 0);
 
-        // ❗ MUY IMPORTANTE:
-        // NO tocar las horas de validTo
-        // porque tú lo guardas a 23:59:59.999
         const inRange =
           from.getTime() <= date.getTime() &&
           (!to || to.getTime() >= date.getTime());
@@ -380,17 +376,6 @@ export class SchedulesService {
         const matchesWeekday = shift.weekday === weekday;
 
         return inRange && matchesWeekday;
-      });
-
-      console.log('📅 BACKEND DÍA', dateStr, {
-        weekday,
-        activeShifts: activeShifts.map(s => ({
-          weekday: s.weekday,
-          startTime: s.startTime,
-          endTime: s.endTime,
-          validFrom: s.validFrom,
-          validTo: s.validTo,
-        })),
       });
 
       // 4️⃣ Excepciones de ese día exacto
@@ -408,11 +393,19 @@ export class SchedulesService {
       }));
 
       let isDayOff = false;
+      let isVacation = false;   // 🔑 NUEVO
 
       for (const ex of dayExceptions) {
 
         if (ex.type === 'DAY_OFF') {
           isDayOff = true;
+          finalTurns = [];
+          break;
+        }
+
+        if (ex.type === 'VACATION') {
+          isVacation = true;
+          isDayOff = true;      // vacaciones = no trabaja
           finalTurns = [];
           break;
         }
@@ -440,6 +433,7 @@ export class SchedulesService {
         weekday,
         turns: finalTurns,
         isDayOff,
+        isVacation,   // 🔑 SE DEVUELVE AL FRONTEND
       });
     }
 
@@ -450,12 +444,10 @@ export class SchedulesService {
       days,
     };
   }
-
-
   async addExceptions(
     scheduleId: string,
     exceptions: {
-      type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF';
+      type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF' | 'VACATION';
       date: string;
       startTime?: string;
       endTime?: string;
@@ -483,8 +475,8 @@ export class SchedulesService {
             scheduleId,
             type: ex.type,
             date: exDate,
-            startTime: ex.startTime,
-            endTime: ex.endTime,
+            startTime: ex.startTime ?? null,
+            endTime: ex.endTime ?? null,
           },
         });
 
@@ -495,13 +487,33 @@ export class SchedulesService {
       // 🔥 CASO 2: DESDE ESTE DÍA EN ADELANTE
       // =========================
       if (ex.mode === 'FROM_THIS_DAY_ON') {
-        console.log('🔥 FROM_THIS_DAY_ON → cerrando shifts desde', ex.date);
+        console.log('🔥 FROM_THIS_DAY_ON → procesando excepción desde', ex.date);
 
-        // weekday de la fecha del borrado
+        // 🔑 SI ES VACATION O DAY_OFF:
+        // No se cierran shifts. Solo se crea UNA excepción en esa fecha.
+        // El frontend ya te mandará un día por cada fecha si es un rango.
+        if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
+          console.log('🏖️ FROM_THIS_DAY_ON para VACATION/DAY_OFF → creando excepción simple');
+
+          await this.prisma.scheduleException.create({
+            data: {
+              scheduleId,
+              type: ex.type,
+              date: exDate,
+              startTime: null,
+              endTime: null,
+            },
+          });
+
+          continue;
+        }
+
+        // 🔴 SOLO PARA MODIFIED_SHIFT: cerrar shifts hacia adelante
+
         const jsDay = exDate.getDay(); // 0 domingo
         const weekday = jsDay === 0 ? 7 : jsDay;
 
-        // 1️⃣ Buscar TODOS los shifts vigentes ese día para ese weekday
+        // 1️⃣ Buscar shifts vigentes ese día
         const candidateShifts = await this.prisma.shift.findMany({
           where: {
             scheduleId,
@@ -523,7 +535,7 @@ export class SchedulesService {
           validTo: s.validTo,
         })));
 
-        // 2️⃣ Filtrar en memoria por bloque horario concreto
+        // 2️⃣ Filtrar por bloque concreto
         const shiftsToClose = candidateShifts.filter(s =>
           s.startTime === ex.startTime &&
           s.endTime === ex.endTime
@@ -532,7 +544,6 @@ export class SchedulesService {
         console.log('✂️ SHIFTS A CERRAR REALMENTE:', shiftsToClose.length);
 
         for (const shift of shiftsToClose) {
-          // Cerrar el turno el día anterior
           const newValidTo = new Date(exDate);
           newValidTo.setDate(exDate.getDate() - 1);
           newValidTo.setHours(23, 59, 59, 999);
