@@ -274,11 +274,6 @@ export class SchedulesService {
      - Cierra horarios anteriores
      - Activa este
   ====================================================== */
-  /* ======================================================
-     CONFIRMAR HORARIO
-     - Cierra horarios anteriores
-     - Activa este
-  ====================================================== */
   async confirmSchedule(scheduleId: string) {
     const schedule = await this.prisma.schedule.findUnique({
       where: { id: scheduleId },
@@ -310,39 +305,10 @@ export class SchedulesService {
   /* ======================================================
      OBTENER HORARIO ACTIVO
   ====================================================== */
-  /*VIEJA 
-  async getActiveSchedule(userId: string) {
-    const schedule = await this.prisma.schedule.findFirst({
-      where: {
-        userId,
-        validFrom: { lte: new Date() },
-        OR: [
-          { validTo: null },
-          { validTo: { gte: new Date() } },
-        ],
-      },
-      include: {
-        shifts: true,
-        exceptions: true,
-      },
-    });
-
-    console.log('🟥 BACKEND SCHEDULE ACTIVO:', schedule?.id || null);
-    console.log('🟥 BACKEND SHIFTS CRUDOS:', schedule?.shifts || []);
-
-    // 🔑 CLAVE: devolver null explícito si no hay horario
-    if (!schedule) {
-      return null;
-    }
-
-    return schedule;
-  }
-
-  /* AÑADIR EXCEPCIONES */
 
   async getActiveSchedule(userId: string, weekStartStr?: string) {
 
-    // 1️⃣ Calcular semana base (lunes) ANTES de buscar el schedule
+    // 1️⃣ Calcular semana base (lunes)
     const weekStart = weekStartStr
       ? new Date(weekStartStr + 'T00:00:00')
       : (() => {
@@ -356,7 +322,7 @@ export class SchedulesService {
 
     console.log('🧠 BACKEND weekStart usado para cálculo:', weekStart.toISOString().slice(0, 10));
 
-    // 2️⃣ Obtener horario activo USANDO weekStart (NO new Date())
+    // 2️⃣ Obtener horario activo para ESA semana
     const schedule = await this.prisma.schedule.findFirst({
       where: {
         userId,
@@ -382,7 +348,7 @@ export class SchedulesService {
 
     const days = [];
 
-    // 🔁 Recorremos lunes → domingo
+    // 🔁 Lunes → Domingo
     for (let i = 0; i < 7; i++) {
 
       const date = new Date(weekStart);
@@ -395,17 +361,25 @@ export class SchedulesService {
       const jsDay = date.getDay(); // 0 domingo
       const weekday = jsDay === 0 ? 7 : jsDay;
 
-      // 3️⃣ Shifts que aplican ese día por vigencia
+      // 3️⃣ Filtrar shifts realmente vigentes ese día
       const activeShifts = schedule.shifts.filter(shift => {
+
         const from = new Date(shift.validFrom);
         const to = shift.validTo ? new Date(shift.validTo) : null;
 
+        // Normalizamos SOLO from a inicio de día
         from.setHours(0, 0, 0, 0);
-        if (to) to.setHours(0, 0, 0, 0);
 
-        const inRange = from <= date && (!to || to >= date);
+        // ❗ MUY IMPORTANTE:
+        // NO tocar las horas de validTo
+        // porque tú lo guardas a 23:59:59.999
+        const inRange =
+          from.getTime() <= date.getTime() &&
+          (!to || to.getTime() >= date.getTime());
 
-        return inRange && shift.weekday === weekday;
+        const matchesWeekday = shift.weekday === weekday;
+
+        return inRange && matchesWeekday;
       });
 
       console.log('📅 BACKEND DÍA', dateStr, {
@@ -469,7 +443,7 @@ export class SchedulesService {
       });
     }
 
-    // 6️⃣ Resultado final de la semana
+    // 6️⃣ Resultado final
     return {
       scheduleId: schedule.id,
       weekStart: weekStart.toISOString().slice(0, 10),
@@ -483,10 +457,9 @@ export class SchedulesService {
     exceptions: {
       type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF';
       date: string;
-      //day: string;                // 👈 IMPORTANTE
       startTime?: string;
       endTime?: string;
-      //mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+      mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
     }[],
   ) {
     console.log('🟥 ADD EXCEPTIONS SERVICE INPUT:', {
@@ -495,35 +468,95 @@ export class SchedulesService {
       exceptions,
     });
 
-    const data = exceptions.map((ex, i) => {
-      console.log('🟣 MAPEANDO EXCEPCIÓN', i, {
-        type: ex.type,
-        date: ex.date,
-        //day: ex.day,
-        startTime: ex.startTime,
-        endTime: ex.endTime,
-      });
+    for (const ex of exceptions) {
+      const exDate = new Date(ex.date);
+      exDate.setHours(0, 0, 0, 0);
 
+      // =========================
+      // 🟢 CASO 1: SOLO ESTE DÍA
+      // =========================
+      if (!ex.mode || ex.mode === 'ONLY_THIS_BLOCK') {
+        console.log('🟡 ONLY_THIS_BLOCK → creando excepción', ex);
 
+        await this.prisma.scheduleException.create({
+          data: {
+            scheduleId,
+            type: ex.type,
+            date: exDate,
+            startTime: ex.startTime,
+            endTime: ex.endTime,
+          },
+        });
 
-      return {
-        scheduleId,
-        type: ex.type,
-        date: new Date(ex.date),
-        //day: ex.day,     fdfdsefsfsfsf            
-        startTime: ex.startTime,
-        endTime: ex.endTime,
-      };
-    });
+        continue;
+      }
 
-    console.log('🟡 DATA FINAL PARA PRISMA:', data);
-    console.log('🚀 INSERTANDO EXCEPCIONES EN DB:', JSON.stringify(data, null, 2));
+      // =========================
+      // 🔥 CASO 2: DESDE ESTE DÍA EN ADELANTE
+      // =========================
+      if (ex.mode === 'FROM_THIS_DAY_ON') {
+        console.log('🔥 FROM_THIS_DAY_ON → cerrando shifts desde', ex.date);
 
-    return this.prisma.scheduleException.createMany({
-      data,
-    });
+        // weekday de la fecha del borrado
+        const jsDay = exDate.getDay(); // 0 domingo
+        const weekday = jsDay === 0 ? 7 : jsDay;
+
+        // 1️⃣ Buscar TODOS los shifts vigentes ese día para ese weekday
+        const candidateShifts = await this.prisma.shift.findMany({
+          where: {
+            scheduleId,
+            weekday,
+            validFrom: { lte: exDate },
+            OR: [
+              { validTo: null },
+              { validTo: { gte: exDate } },
+            ],
+          },
+        });
+
+        console.log('🔍 SHIFTS VIGENTES ESE DÍA:', candidateShifts.map(s => ({
+          id: s.id,
+          weekday: s.weekday,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          validFrom: s.validFrom,
+          validTo: s.validTo,
+        })));
+
+        // 2️⃣ Filtrar en memoria por bloque horario concreto
+        const shiftsToClose = candidateShifts.filter(s =>
+          s.startTime === ex.startTime &&
+          s.endTime === ex.endTime
+        );
+
+        console.log('✂️ SHIFTS A CERRAR REALMENTE:', shiftsToClose.length);
+
+        for (const shift of shiftsToClose) {
+          // Cerrar el turno el día anterior
+          const newValidTo = new Date(exDate);
+          newValidTo.setDate(exDate.getDate() - 1);
+          newValidTo.setHours(23, 59, 59, 999);
+
+          console.log('✂️ CERRANDO SHIFT:', {
+            shiftId: shift.id,
+            oldValidTo: shift.validTo,
+            newValidTo,
+          });
+
+          await this.prisma.shift.update({
+            where: { id: shift.id },
+            data: {
+              validTo: newValidTo,
+            },
+          });
+        }
+
+        continue;
+      }
+    }
+
+    return { ok: true };
   }
-
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
      ¿Tenía que trabajar este usuario en esta fecha?
