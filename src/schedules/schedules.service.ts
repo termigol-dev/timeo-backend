@@ -342,14 +342,28 @@ export class SchedulesService {
 
   async getActiveSchedule(userId: string, weekStartStr?: string) {
 
-    // 1️⃣ Obtener horario activo
+    // 1️⃣ Calcular semana base (lunes) ANTES de buscar el schedule
+    const weekStart = weekStartStr
+      ? new Date(weekStartStr + 'T00:00:00')
+      : (() => {
+        const d = new Date();
+        const day = d.getDay(); // 0 domingo, 1 lunes...
+        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
+        const monday = new Date(d.setDate(diff));
+        monday.setHours(0, 0, 0, 0);
+        return monday;
+      })();
+
+    console.log('🧠 BACKEND weekStart usado para cálculo:', weekStart.toISOString().slice(0, 10));
+
+    // 2️⃣ Obtener horario activo USANDO weekStart (NO new Date())
     const schedule = await this.prisma.schedule.findFirst({
       where: {
         userId,
-        validFrom: { lte: new Date() },
+        validFrom: { lte: weekStart },
         OR: [
           { validTo: null },
-          { validTo: { gte: new Date() } },
+          { validTo: { gte: weekStart } },
         ],
       },
       include: {
@@ -359,18 +373,12 @@ export class SchedulesService {
     });
 
     if (!schedule) {
-      return { days: [] };
+      return {
+        scheduleId: null,
+        weekStart: weekStart.toISOString().slice(0, 10),
+        days: [],
+      };
     }
-
-    // 2️⃣ Calcular semana base (lunes)
-    const weekStart = weekStartStr
-      ? new Date(weekStartStr + 'T00:00:00')
-      : (() => {
-        const d = new Date();
-        const day = d.getDay(); // 0 domingo, 1 lunes...
-        const diff = d.getDate() - day + (day === 0 ? -6 : 1);
-        return new Date(d.setDate(diff));
-      })();
 
     const days = [];
 
@@ -398,6 +406,17 @@ export class SchedulesService {
         const inRange = from <= date && (!to || to >= date);
 
         return inRange && shift.weekday === weekday;
+      });
+
+      console.log('📅 BACKEND DÍA', dateStr, {
+        weekday,
+        activeShifts: activeShifts.map(s => ({
+          weekday: s.weekday,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          validFrom: s.validFrom,
+          validTo: s.validTo,
+        })),
       });
 
       // 4️⃣ Excepciones de ese día exacto
@@ -459,7 +478,6 @@ export class SchedulesService {
   }
 
 
-  
   async addExceptions(
     scheduleId: string,
     exceptions: {
