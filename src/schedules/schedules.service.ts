@@ -24,6 +24,12 @@ import { Role } from '@prisma/client';
 export class SchedulesService {
   constructor(private prisma: PrismaService) { }
 
+  private formatDateLocal(d: Date): string {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  }
   /* ======================================================
      CREAR HORARIO EN BORRADOR
   ====================================================== */
@@ -302,6 +308,8 @@ export class SchedulesService {
       },
     });
   }
+
+
   /* ======================================================
      OBTENER HORARIO ACTIVO
   ====================================================== */
@@ -320,7 +328,8 @@ export class SchedulesService {
         return monday;
       })();
 
-    console.log('🧠 BACKEND weekStart usado para cálculo:', weekStart.toISOString().slice(0, 10));
+    // ⚠️ LOG SOLO PARA VER, NO PARA LÓGICA
+    console.log('🧠 BACKEND weekStart usado para cálculo:', this.formatDateLocal(weekStart));
 
     // 2️⃣ Obtener horario activo que toque esta semana
     const schedule = await this.prisma.schedule.findFirst({
@@ -344,48 +353,42 @@ export class SchedulesService {
       },
     });
 
-    // 🧪 LOG CRÍTICO
     console.log('🧪 DEBUG schedule raw:', schedule);
 
-    // 🔴 SI NO HAY SCHEDULE, SALIMOS AQUÍ Y PUNTO
+    // 🔴 SI NO HAY SCHEDULE, SALIMOS
     if (!schedule) {
       console.log('🟡 NO HAY SCHEDULE ACTIVO PARA ESTA SEMANA');
       return {
         scheduleId: null,
-        weekStart: weekStart.toISOString().slice(0, 10),
+        weekStart: this.formatDateLocal(weekStart),
         days: [],
       };
     }
 
-    // 🟢 A PARTIR DE AQUÍ ES 100% SEGURO USAR schedule.id
     console.log('🟢 SCHEDULE NO ES NULL, id =', schedule.id);
-
-    console.log('🟥 BACKEND SCHEDULE USADO:', {
-      id: schedule.id,
-      validFrom: schedule.validFrom,
-      validTo: schedule.validTo,
-      shifts: schedule.shifts.map(s => ({
-        id: s.id,
-        weekday: s.weekday,
-        validFrom: s.validFrom,
-        validTo: s.validTo,
-      })),
-    });
 
     const days = [];
 
-    // 🔁 Lunes → Domingo
+    // 🔁 Lunes → Domingo (weekStart YA ES lunes)
     for (let i = 0; i < 7; i++) {
 
       const date = new Date(weekStart);
       date.setDate(weekStart.getDate() + i);
       date.setHours(0, 0, 0, 0);
 
-      const dateStr = date.toISOString().slice(0, 10);
+      const dateStr = this.formatDateLocal(date);
 
-      // weekday: 1 = lunes ... 7 = domingo
-      const jsDay = date.getDay(); // 0 domingo
+      // jsDay: 0 domingo, 1 lunes, ... 6 sábado
+      const jsDay = date.getDay();
+
+      // 👉 NUESTRA ÚNICA CONVENCIÓN: 1=lunes ... 7=domingo
       const weekday = jsDay === 0 ? 7 : jsDay;
+
+      console.log('📆 BACKEND DÍA CALCULADO:', {
+        dateStr,
+        jsDay: date.getDay(),
+        weekdayCalculado: weekday,
+      });
 
       // 4️⃣ Shifts vigentes ese día
       const activeShifts = schedule.shifts.filter(shift => {
@@ -393,8 +396,8 @@ export class SchedulesService {
         const from = new Date(shift.validFrom);
         const to = shift.validTo ? new Date(shift.validTo) : null;
 
-        // 🔑 SOLO normalizamos validFrom
         from.setHours(0, 0, 0, 0);
+        if (to) to.setHours(0, 0, 0, 0);
 
         const inRange =
           from.getTime() <= date.getTime() &&
@@ -405,21 +408,9 @@ export class SchedulesService {
         return inRange && matchesWeekday;
       });
 
-      console.log('🧠 BACKEND DEBUG DÍA', dateStr, {
-        weekday,
-        activeShifts: activeShifts.map(s => ({
-          id: s.id,
-          weekday: s.weekday,
-          startTime: s.startTime,
-          endTime: s.endTime,
-          validFrom: s.validFrom,
-          validTo: s.validTo,
-        })),
-      });
-
-      // 5️⃣ Excepciones de ese día exacto
+      // 5️⃣ Excepciones de ese día exacto (SIN UTC)
       const dayExceptions = schedule.exceptions.filter(ex => {
-        const exDateStr = ex.date.toISOString().slice(0, 10);
+        const exDateStr = this.formatDateLocal(new Date(ex.date));
         return exDateStr === dateStr;
       });
 
@@ -447,7 +438,6 @@ export class SchedulesService {
           break;
         }
 
-        // 🟡 MODIFIED_SHIFT = quitar solo ese bloque de ese día
         if (ex.type === 'MODIFIED_SHIFT') {
           finalTurns = finalTurns.filter(t =>
             !(
@@ -468,7 +458,7 @@ export class SchedulesService {
 
       days.push({
         date: dateStr,
-        weekday,
+        weekday, // 🔑 SIEMPRE 1..7
         turns: finalTurns,
         isDayOff,
         isVacation,
@@ -485,7 +475,7 @@ export class SchedulesService {
     // 7️⃣ Resultado final
     return {
       scheduleId: schedule.id,
-      weekStart: weekStart.toISOString().slice(0, 10),
+      weekStart: this.formatDateLocal(weekStart),
       days,
     };
   }
@@ -842,3 +832,4 @@ export class SchedulesService {
     });
   }
 }
+
