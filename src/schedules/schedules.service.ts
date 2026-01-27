@@ -322,12 +322,7 @@ export class SchedulesService {
 
     console.log('🧠 BACKEND weekStart usado para cálculo:', weekStart.toISOString().slice(0, 10));
 
-    // 2️⃣ Calcular fin de semana
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    weekEnd.setHours(23, 59, 59, 999);
-
-    // 3️⃣ Obtener horario activo que toque esta semana
+    // 2️⃣ Obtener horario activo que toque esta semana
     const schedule = await this.prisma.schedule.findFirst({
       where: {
         userId,
@@ -337,7 +332,7 @@ export class SchedulesService {
           { validTo: { gte: weekStart } },
         ],
         shifts: {
-          some: {},          // 🔑 SOLO schedules que tengan al menos 1 shift
+          some: {}, // 🔑 SOLO schedules que tengan al menos 1 shift
         },
       },
       orderBy: {
@@ -347,7 +342,23 @@ export class SchedulesService {
         shifts: true,
         exceptions: true,
       },
-    });;
+    });
+
+    // 🧪 LOG CRÍTICO
+    console.log('🧪 DEBUG schedule raw:', schedule);
+
+    // 🔴 SI NO HAY SCHEDULE, SALIMOS AQUÍ Y PUNTO
+    if (!schedule) {
+      console.log('🟡 NO HAY SCHEDULE ACTIVO PARA ESTA SEMANA');
+      return {
+        scheduleId: null,
+        weekStart: weekStart.toISOString().slice(0, 10),
+        days: [],
+      };
+    }
+
+    // 🟢 A PARTIR DE AQUÍ ES 100% SEGURO USAR schedule.id
+    console.log('🟢 SCHEDULE NO ES NULL, id =', schedule.id);
 
     console.log('🟥 BACKEND SCHEDULE USADO:', {
       id: schedule.id,
@@ -360,14 +371,6 @@ export class SchedulesService {
         validTo: s.validTo,
       })),
     });
-
-    if (!schedule) {
-      return {
-        scheduleId: null,
-        weekStart: weekStart.toISOString().slice(0, 10),
-        days: [],
-      };
-    }
 
     const days = [];
 
@@ -384,7 +387,7 @@ export class SchedulesService {
       const jsDay = date.getDay(); // 0 domingo
       const weekday = jsDay === 0 ? 7 : jsDay;
 
-      // 4️⃣ Shifts vigentes ese día  (VERSIÓN BUENA)
+      // 4️⃣ Shifts vigentes ese día
       const activeShifts = schedule.shifts.filter(shift => {
 
         const from = new Date(shift.validFrom);
@@ -401,18 +404,7 @@ export class SchedulesService {
 
         return inRange && matchesWeekday;
       });
-      console.log('📅 SEMANA', weekStart.toISOString().slice(0, 10), '→ DÍA', dateStr, {
-        weekday,
-        totalShiftsEnSchedule: schedule.shifts.length,
-        shiftsEnRango: activeShifts.map(s => ({
-          id: s.id,
-          weekday: s.weekday,
-          startTime: s.startTime,
-          endTime: s.endTime,
-          validFrom: s.validFrom,
-          validTo: s.validTo,
-        })),
-      });
+
       console.log('🧠 BACKEND DEBUG DÍA', dateStr, {
         weekday,
         activeShifts: activeShifts.map(s => ({
@@ -425,10 +417,9 @@ export class SchedulesService {
         })),
       });
 
-      // 5️⃣ Excepciones de ese día exacto (SIN Date, sin zona horaria)
+      // 5️⃣ Excepciones de ese día exacto
       const dayExceptions = schedule.exceptions.filter(ex => {
         const exDateStr = ex.date.toISOString().slice(0, 10);
-        const dateStr = date.toISOString().slice(0, 10); // 'YYYY-MM-DD' del bucle
         return exDateStr === dateStr;
       });
 
@@ -444,32 +435,28 @@ export class SchedulesService {
 
       for (const ex of dayExceptions) {
 
-        // 🔴 VACATION = día completo sin turnos
         if (ex.type === 'VACATION') {
           isVacation = true;
           finalTurns = [];
           break;
         }
 
-        // 🔴 DAY_OFF = día completo sin turnos
         if (ex.type === 'DAY_OFF') {
           isDayOff = true;
           finalTurns = [];
           break;
         }
 
-        // 🟡 MODIFIED_SHIFT = quitar un bloque concreto (SOLO ESTE DÍA)
+        // 🟡 MODIFIED_SHIFT = quitar solo ese bloque de ese día
         if (ex.type === 'MODIFIED_SHIFT') {
-          finalTurns = finalTurns.filter(t => {
-            return !(
+          finalTurns = finalTurns.filter(t =>
+            !(
               t.startTime === ex.startTime &&
               t.endTime === ex.endTime
-              // 🔑 NO weekday, NO rango: aquí ya estamos en EL DÍA exacto
-            );
-          });
+            )
+          );
         }
 
-        // 🟢 EXTRA_SHIFT = añadir bloque nuevo
         if (ex.type === 'EXTRA_SHIFT') {
           finalTurns.push({
             startTime: ex.startTime,
@@ -486,6 +473,7 @@ export class SchedulesService {
         isDayOff,
         isVacation,
       });
+
       console.log('🟢 RESULTADO FINAL DÍA', dateStr, {
         weekday,
         finalTurns,
