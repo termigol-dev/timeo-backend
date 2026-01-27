@@ -331,16 +331,34 @@ export class SchedulesService {
     const schedule = await this.prisma.schedule.findFirst({
       where: {
         userId,
-        validFrom: { lte: weekEnd },
+        validFrom: { lte: weekStart },
         OR: [
           { validTo: null },
           { validTo: { gte: weekStart } },
         ],
+        shifts: {
+          some: {},          // 🔑 SOLO schedules que tengan al menos 1 shift
+        },
+      },
+      orderBy: {
+        validFrom: 'desc',
       },
       include: {
         shifts: true,
         exceptions: true,
       },
+    });;
+
+    console.log('🟥 BACKEND SCHEDULE USADO:', {
+      id: schedule.id,
+      validFrom: schedule.validFrom,
+      validTo: schedule.validTo,
+      shifts: schedule.shifts.map(s => ({
+        id: s.id,
+        weekday: s.weekday,
+        validFrom: s.validFrom,
+        validTo: s.validTo,
+      })),
     });
 
     if (!schedule) {
@@ -383,7 +401,18 @@ export class SchedulesService {
 
         return inRange && matchesWeekday;
       });
-
+      console.log('📅 SEMANA', weekStart.toISOString().slice(0, 10), '→ DÍA', dateStr, {
+        weekday,
+        totalShiftsEnSchedule: schedule.shifts.length,
+        shiftsEnRango: activeShifts.map(s => ({
+          id: s.id,
+          weekday: s.weekday,
+          startTime: s.startTime,
+          endTime: s.endTime,
+          validFrom: s.validFrom,
+          validTo: s.validTo,
+        })),
+      });
       console.log('🧠 BACKEND DEBUG DÍA', dateStr, {
         weekday,
         activeShifts: activeShifts.map(s => ({
@@ -396,11 +425,11 @@ export class SchedulesService {
         })),
       });
 
-      // 5️⃣ Excepciones de ese día exacto
+      // 5️⃣ Excepciones de ese día exacto (SIN Date, sin zona horaria)
       const dayExceptions = schedule.exceptions.filter(ex => {
-        const exDate = new Date(ex.date);
-        exDate.setHours(0, 0, 0, 0);
-        return exDate.getTime() === date.getTime();
+        const exDateStr = ex.date.toISOString().slice(0, 10);
+        const dateStr = date.toISOString().slice(0, 10); // 'YYYY-MM-DD' del bucle
+        return exDateStr === dateStr;
       });
 
       // 6️⃣ Aplicar reglas
@@ -429,14 +458,15 @@ export class SchedulesService {
           break;
         }
 
-        // 🟡 MODIFIED_SHIFT = quitar un bloque concreto
+        // 🟡 MODIFIED_SHIFT = quitar un bloque concreto (SOLO ESTE DÍA)
         if (ex.type === 'MODIFIED_SHIFT') {
-          finalTurns = finalTurns.filter(t =>
-            !(
+          finalTurns = finalTurns.filter(t => {
+            return !(
               t.startTime === ex.startTime &&
               t.endTime === ex.endTime
-            )
-          );
+              // 🔑 NO weekday, NO rango: aquí ya estamos en EL DÍA exacto
+            );
+          });
         }
 
         // 🟢 EXTRA_SHIFT = añadir bloque nuevo
@@ -453,6 +483,12 @@ export class SchedulesService {
         date: dateStr,
         weekday,
         turns: finalTurns,
+        isDayOff,
+        isVacation,
+      });
+      console.log('🟢 RESULTADO FINAL DÍA', dateStr, {
+        weekday,
+        finalTurns,
         isDayOff,
         isVacation,
       });
