@@ -318,7 +318,7 @@ export class SchedulesService {
 
     // 1️⃣ Calcular semana base (lunes)
     const weekStart = weekStartStr
-      ? new Date(weekStartStr + 'T00:00:00')
+      ? new Date(weekStartStr)   // ✅ CAMBIO ÚNICO (sin 'T00:00:00')
       : (() => {
         const d = new Date();
         const day = d.getDay(); // 0 domingo, 1 lunes...
@@ -328,9 +328,13 @@ export class SchedulesService {
         return monday;
       })();
 
-    // ⚠️ LOG SOLO PARA VER, NO PARA LÓGICA
-    console.log('🧠 BACKEND weekStart usado para cálculo:', this.formatDateLocal(weekStart));
+    // Normalizamos SIEMPRE a lunes local
+    weekStart.setHours(0, 0, 0, 0);
 
+    console.log(
+      '🧠 BACKEND weekStart usado para cálculo:',
+      this.formatDateLocal(weekStart)
+    );
     // 2️⃣ Obtener horario activo que toque esta semana
     const schedule = await this.prisma.schedule.findFirst({
       where: {
