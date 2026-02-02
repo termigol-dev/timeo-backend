@@ -82,8 +82,8 @@ export class SchedulesService {
       weekday: number;      // 1 = lunes ... 7 = domingo
       startTime: string;
       endTime: string;
-      validFrom: string;   // YYYY-MM-DD
-      validTo?: string;    // YYYY-MM-DD | null
+      validFrom: string;   // YYYY-MM-DD (LOCAL)
+      validTo?: string;    // YYYY-MM-DD | null (LOCAL)
     },
   ) {
     try {
@@ -92,12 +92,11 @@ export class SchedulesService {
         data,
       });
 
-      let { weekday, startTime, endTime, validFrom, validTo } = data;
+      const { weekday, startTime, endTime, validFrom, validTo } = data;
 
       // ==================================================
       // 🛡️ BLINDAJE TOTAL DE weekday
       // ==================================================
-      // 0, null, undefined, NaN → inválido controlado
       if (
         weekday === null ||
         weekday === undefined ||
@@ -106,10 +105,9 @@ export class SchedulesService {
         throw new BadRequestException('Día inválido (weekday nulo)');
       }
 
-      // Solo aceptamos 1..7
       if (weekday < 1 || weekday > 7) {
         throw new BadRequestException(
-          `Día inválido: ${weekday}. Debe ser 1 (lunes) a 7 (domingo)`
+          `Día inválido: ${weekday}. Debe ser 1 (lunes) a 7 (domingo)`,
         );
       }
 
@@ -131,29 +129,36 @@ export class SchedulesService {
       }
 
       // ==================================================
-      // FECHAS NORMALIZADAS A LOCAL (00:00)
+      // 🔑 PARSEO DE FECHA LOCAL REAL (SIN UTC)
       // ==================================================
-      const fromDate = new Date(validFrom);
-      fromDate.setHours(0, 0, 0, 0);
+      const parseLocalDate = (str: string): Date => {
+        const [y, m, d] = str.split('-').map(Number);
 
-      const toDate = validTo ? new Date(validTo) : null;
-      if (toDate) {
-        toDate.setHours(0, 0, 0, 0);
-      }
+        if (!y || !m || !d) {
+          throw new BadRequestException(`Fecha inválida: ${str}`);
+        }
 
-      if (toDate && fromDate > toDate) {
+        const date = new Date(y, m - 1, d);
+        date.setHours(0, 0, 0, 0);
+        return date;
+      };
+
+      const fromDate = parseLocalDate(validFrom);
+      const toDate = validTo ? parseLocalDate(validTo) : null;
+
+      if (toDate && fromDate.getTime() > toDate.getTime()) {
         throw new BadRequestException(
           'La fecha de inicio no puede ser posterior a la de fin',
         );
       }
 
       // ==================================================
-      // 🔒 REGLA DE ORO: NO TOCAR EL PASADO
+      // 🔒 REGLA DE ORO: NO TOCAR EL PASADO (LOCAL)
       // ==================================================
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
-      if (fromDate < today) {
+      if (fromDate.getTime() < today.getTime()) {
         throw new BadRequestException(
           'No se pueden crear o modificar turnos en el pasado',
         );
@@ -166,7 +171,6 @@ export class SchedulesService {
         where: {
           scheduleId,
           weekday,
-
           AND: [
             {
               OR: [
@@ -186,12 +190,10 @@ export class SchedulesService {
       // ==================================================
       // COMPROBAR SOLAPE HORARIO
       // ==================================================
-      const hasOverlap = existingShifts.some(shift => {
-        return (
-          startTime < shift.endTime &&
-          endTime > shift.startTime
-        );
-      });
+      const hasOverlap = existingShifts.some(shift =>
+        startTime < shift.endTime &&
+        endTime > shift.startTime,
+      );
 
       if (hasOverlap) {
         throw new BadRequestException(
@@ -205,7 +207,7 @@ export class SchedulesService {
       const created = await this.prisma.shift.create({
         data: {
           scheduleId,
-          weekday,          // 👈 SIEMPRE 1..7
+          weekday,     // 1..7
           startTime,
           endTime,
           validFrom: fromDate,
@@ -214,6 +216,7 @@ export class SchedulesService {
       });
 
       console.log('🟢 TURNO CREADO:', created);
+
       return created;
 
     } catch (err) {
@@ -221,7 +224,6 @@ export class SchedulesService {
       throw err;
     }
   }
-
   /* ======================================================
        AÑADIR VACACIONES (BORRADOR)
     ====================================================== */
