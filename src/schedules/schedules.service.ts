@@ -298,33 +298,65 @@ export class SchedulesService {
      - Activa este
   ====================================================== */
   async confirmSchedule(scheduleId: string) {
-    const schedule = await this.prisma.schedule.findUnique({
-      where: { id: scheduleId },
-    });
 
-    if (!schedule) {
-      throw new NotFoundException('Horario no encontrado');
-    }
+  const schedule = await this.prisma.schedule.findUnique({
+    where: { id: scheduleId },
+    include: {
+      shifts: true,
+    },
+  });
 
-    // 1️⃣ Cerrar otros schedules activos del mismo usuario
-    await this.prisma.schedule.updateMany({
-      where: {
-        userId: schedule.userId,
-        validTo: null,
-        NOT: { id: schedule.id },
-      },
-      data: { validTo: new Date() },
-    });
-
-    // 2️⃣ Activar este schedule
-    return this.prisma.schedule.update({
-      where: { id: schedule.id },
-      data: {
-        validFrom: new Date(),
-        validTo: null,
-      },
-    });
+  if (!schedule) {
+    throw new NotFoundException('Horario no encontrado');
   }
+
+  if (!schedule.shifts || schedule.shifts.length === 0) {
+    throw new BadRequestException(
+      'No se puede confirmar un horario sin turnos',
+    );
+  }
+
+  // ==================================================
+  // 🔑 El validFrom REAL del schedule es el primer
+  //     validFrom de sus turnos
+  // ==================================================
+  const minShiftDate = schedule.shifts.reduce((min, s) => {
+    return s.validFrom < min ? s.validFrom : min;
+  }, schedule.shifts[0].validFrom);
+
+  const scheduleValidFrom = new Date(minShiftDate);
+  scheduleValidFrom.setHours(0, 0, 0, 0);
+
+  // ==================================================
+  // 1️⃣ Cerrar otros schedules activos del mismo usuario
+  //     justo el día anterior
+  // ==================================================
+  const previousScheduleValidTo = new Date(scheduleValidFrom);
+  previousScheduleValidTo.setDate(previousScheduleValidTo.getDate() - 1);
+  previousScheduleValidTo.setHours(23, 59, 59, 999);
+
+  await this.prisma.schedule.updateMany({
+    where: {
+      userId: schedule.userId,
+      validTo: null,
+      NOT: { id: schedule.id },
+    },
+    data: {
+      validTo: previousScheduleValidTo,
+    },
+  });
+
+  // ==================================================
+  // 2️⃣ Activar este schedule
+  // ==================================================
+  return this.prisma.schedule.update({
+    where: { id: schedule.id },
+    data: {
+      validFrom: scheduleValidFrom,
+      validTo: null,
+    },
+  });
+}
 
 
   /* ======================================================
@@ -333,7 +365,7 @@ export class SchedulesService {
   async getActiveSchedule(userId: string, weekStartStr?: string) {
 
     // ==================================================
-    // 1️⃣ CALCULAR WEEKSTART — SIEMPRE LUNES (1)
+    // 1️⃣ CALCULAR WEEKSTART — SIEMPRE LUNES (local)
     // ==================================================
     let weekStart: Date;
 
@@ -341,11 +373,8 @@ export class SchedulesService {
       const d = new Date(weekStartStr);
       d.setHours(0, 0, 0, 0);
 
-      const jsDay = d.getDay(); // 0 domingo, 1 lunes...
-
-      // 🔑 CONVERSIÓN FORZADA A LUNES
-      const offset =
-        jsDay === 0 ? -6 : 1 - jsDay;
+      const jsDay = d.getDay(); // 0..6
+      const offset = jsDay === 0 ? -6 : 1 - jsDay;
 
       d.setDate(d.getDate() + offset);
       weekStart = d;
@@ -354,32 +383,33 @@ export class SchedulesService {
       d.setHours(0, 0, 0, 0);
 
       const jsDay = d.getDay();
-      const offset =
-        jsDay === 0 ? -6 : 1 - jsDay;
+      const offset = jsDay === 0 ? -6 : 1 - jsDay;
 
       d.setDate(d.getDate() + offset);
       weekStart = d;
     }
 
-    console.log(
-      '🧠 BACKEND weekStart NORMALIZADO (lunes):',
-      this.formatDateLocal(weekStart)
-    );
+    // weekEnd (domingo)
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
+
+    console.log('🧠 BACKEND weekStart:', this.formatDateLocal(weekStart));
+    console.log('🧠 BACKEND weekEnd  :', this.formatDateLocal(weekEnd));
 
     // ==================================================
-    // 2️⃣ OBTENER SCHEDULE ACTIVO
+    // 2️⃣ OBTENER SCHEDULE ACTIVO PARA ESA SEMANA
     // ==================================================
     const schedule = await this.prisma.schedule.findFirst({
       where: {
         userId,
-        validFrom: { lte: weekStart },
+
+        // 🔑 el schedule toca la semana
+        validFrom: { lte: weekEnd },
         OR: [
           { validTo: null },
           { validTo: { gte: weekStart } },
         ],
-        shifts: {
-          some: {},
-        },
       },
       orderBy: {
         validFrom: 'desc',
@@ -401,7 +431,7 @@ export class SchedulesService {
     const days = [];
 
     // ==================================================
-    // 3️⃣ LUNES (1) → DOMINGO (7)
+    // 3️⃣ LUNES → DOMINGO
     // ==================================================
     for (let i = 0; i < 7; i++) {
 
@@ -411,25 +441,20 @@ export class SchedulesService {
 
       const dateStr = this.formatDateLocal(date);
 
-      const jsDay = date.getDay(); // 0..6
-      const weekday =
-        jsDay === 0 ? 7 : jsDay; // 👈 BLINDAJE FINAL
+      const jsDay = date.getDay();
+      const weekday = jsDay === 0 ? 7 : jsDay;
 
       // ==================================================
-      // 4️⃣ TURNOS VIGENTES ESE DÍA
+      // 4️⃣ SHIFTS VIGENTES ESE DÍA
       // ==================================================
       const activeShifts = schedule.shifts.filter(shift => {
 
-        if (shift.weekday < 1 || shift.weekday > 7) {
-          return false; // 🛡️ BLINDAJE
-        }
+        if (shift.weekday < 1 || shift.weekday > 7) return false;
 
         const from = new Date(shift.validFrom);
         from.setHours(0, 0, 0, 0);
 
-        const to = shift.validTo
-          ? new Date(shift.validTo)
-          : null;
+        const to = shift.validTo ? new Date(shift.validTo) : null;
         if (to) to.setHours(0, 0, 0, 0);
 
         const inRange =
@@ -440,11 +465,10 @@ export class SchedulesService {
       });
 
       // ==================================================
-      // 5️⃣ EXCEPCIONES DEL DÍA (LOCAL)
+      // 5️⃣ EXCEPCIONES DEL DÍA
       // ==================================================
       const dayExceptions = schedule.exceptions.filter(ex => {
-        const exDateStr =
-          this.formatDateLocal(new Date(ex.date));
+        const exDateStr = this.formatDateLocal(new Date(ex.date));
         return exDateStr === dateStr;
       });
 
@@ -494,16 +518,13 @@ export class SchedulesService {
 
       days.push({
         date: dateStr,
-        weekday, // ✅ SIEMPRE 1..7
+        weekday,
         turns: finalTurns,
         isDayOff,
         isVacation,
       });
     }
 
-    // ==================================================
-    // 7️⃣ RESULTADO FINAL
-    // ==================================================
     return {
       scheduleId: schedule.id,
       weekStart: this.formatDateLocal(weekStart),
