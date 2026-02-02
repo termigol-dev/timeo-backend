@@ -299,64 +299,64 @@ export class SchedulesService {
   ====================================================== */
   async confirmSchedule(scheduleId: string) {
 
-  const schedule = await this.prisma.schedule.findUnique({
-    where: { id: scheduleId },
-    include: {
-      shifts: true,
-    },
-  });
+    const schedule = await this.prisma.schedule.findUnique({
+      where: { id: scheduleId },
+      include: {
+        shifts: true,
+      },
+    });
 
-  if (!schedule) {
-    throw new NotFoundException('Horario no encontrado');
+    if (!schedule) {
+      throw new NotFoundException('Horario no encontrado');
+    }
+
+    if (!schedule.shifts || schedule.shifts.length === 0) {
+      throw new BadRequestException(
+        'No se puede confirmar un horario sin turnos',
+      );
+    }
+
+    // ==================================================
+    // 🔑 El validFrom REAL del schedule es el primer
+    //     validFrom de sus turnos
+    // ==================================================
+    const minShiftDate = schedule.shifts.reduce((min, s) => {
+      return s.validFrom < min ? s.validFrom : min;
+    }, schedule.shifts[0].validFrom);
+
+    const scheduleValidFrom = new Date(minShiftDate);
+    scheduleValidFrom.setHours(0, 0, 0, 0);
+
+    // ==================================================
+    // 1️⃣ Cerrar otros schedules activos del mismo usuario
+    //     justo el día anterior
+    // ==================================================
+    const previousScheduleValidTo = new Date(scheduleValidFrom);
+    previousScheduleValidTo.setDate(previousScheduleValidTo.getDate() - 1);
+    previousScheduleValidTo.setHours(23, 59, 59, 999);
+
+    await this.prisma.schedule.updateMany({
+      where: {
+        userId: schedule.userId,
+        validTo: null,
+        NOT: { id: schedule.id },
+      },
+      data: {
+        validTo: previousScheduleValidTo,
+      },
+    });
+
+    // ==================================================
+    // 2️⃣ Activar este schedule
+    // ==================================================
+    return this.prisma.schedule.update({
+      where: { id: schedule.id },
+      data: {
+        validFrom: scheduleValidFrom,
+        validTo: null,
+      },
+    });
   }
-
-  if (!schedule.shifts || schedule.shifts.length === 0) {
-    throw new BadRequestException(
-      'No se puede confirmar un horario sin turnos',
-    );
-  }
-
-  // ==================================================
-  // 🔑 El validFrom REAL del schedule es el primer
-  //     validFrom de sus turnos
-  // ==================================================
-  const minShiftDate = schedule.shifts.reduce((min, s) => {
-    return s.validFrom < min ? s.validFrom : min;
-  }, schedule.shifts[0].validFrom);
-
-  const scheduleValidFrom = new Date(minShiftDate);
-  scheduleValidFrom.setHours(0, 0, 0, 0);
-
-  // ==================================================
-  // 1️⃣ Cerrar otros schedules activos del mismo usuario
-  //     justo el día anterior
-  // ==================================================
-  const previousScheduleValidTo = new Date(scheduleValidFrom);
-  previousScheduleValidTo.setDate(previousScheduleValidTo.getDate() - 1);
-  previousScheduleValidTo.setHours(23, 59, 59, 999);
-
-  await this.prisma.schedule.updateMany({
-    where: {
-      userId: schedule.userId,
-      validTo: null,
-      NOT: { id: schedule.id },
-    },
-    data: {
-      validTo: previousScheduleValidTo,
-    },
-  });
-
-  // ==================================================
-  // 2️⃣ Activar este schedule
-  // ==================================================
-  return this.prisma.schedule.update({
-    where: { id: schedule.id },
-    data: {
-      validFrom: scheduleValidFrom,
-      validTo: null,
-    },
-  });
-}
 
 
   /* ======================================================
@@ -499,12 +499,42 @@ export class SchedulesService {
         }
 
         if (ex.type === 'MODIFIED_SHIFT') {
-          finalTurns = finalTurns.filter(t =>
-            !(
-              t.startTime === ex.startTime &&
-              t.endTime === ex.endTime
-            )
-          );
+
+          const newTurns = [];
+
+          for (const t of finalTurns) {
+
+            // si no solapa, se queda igual
+            if (
+              ex.endTime <= t.startTime ||
+              ex.startTime >= t.endTime
+            ) {
+              newTurns.push(t);
+              continue;
+            }
+
+            // hay solape → recortamos
+
+            // tramo antes
+            if (ex.startTime > t.startTime) {
+              newTurns.push({
+                ...t,
+                startTime: t.startTime,
+                endTime: ex.startTime,
+              });
+            }
+
+            // tramo después
+            if (ex.endTime < t.endTime) {
+              newTurns.push({
+                ...t,
+                startTime: ex.endTime,
+                endTime: t.endTime,
+              });
+            }
+          }
+
+          finalTurns = newTurns;
         }
 
         if (ex.type === 'EXTRA_SHIFT') {
