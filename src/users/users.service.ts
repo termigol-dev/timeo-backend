@@ -240,7 +240,7 @@ return {
 
 /* ───────── ADMIN ACTIONS ───────── */
 
-async uploadUserPhoto(userId: string, file: Express.Multer.File) {
+async uploadUserPhoto(userId: string, file: any) {
 
   if (!file) {
     throw new BadRequestException('No se ha enviado ninguna imagen');
@@ -254,8 +254,6 @@ async uploadUserPhoto(userId: string, file: Express.Multer.File) {
     throw new NotFoundException('Usuario no encontrado');
   }
 
-  // ⚠️ de momento lo guardamos como base64
-  // (luego si quieres lo pasamos a S3 / disco)
   const base64 = file.buffer.toString('base64');
   const mime = file.mimetype;
 
@@ -264,7 +262,7 @@ async uploadUserPhoto(userId: string, file: Express.Multer.File) {
   return this.prisma.user.update({
     where: { id: userId },
     data: {
-      photo,
+      photo,   // ✅ tu campo real
     },
   });
 }
