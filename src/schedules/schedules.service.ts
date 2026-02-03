@@ -743,7 +743,7 @@ export class SchedulesService {
     }
 
     // ======================================================
-    // SOLO ESTE BLOQUE
+    // SOLO ESTE BLOQUE  → excepción
     // ======================================================
     if (mode === 'ONLY_THIS_BLOCK') {
       return this.prisma.scheduleException.create({
@@ -758,31 +758,89 @@ export class SchedulesService {
     }
 
     // ======================================================
-    // FROM_THIS_DAY_ON
+    // FROM_THIS_DAY_ON  → estructural por rango
     // ======================================================
     if (mode === 'FROM_THIS_DAY_ON') {
-      const shift = await this.prisma.shift.findFirst({
+
+      const shifts = await this.prisma.shift.findMany({
         where: {
           scheduleId,
           weekday,
-          startTime,
-          endTime,
+
+          // turno activo ese día
           validFrom: { lte: baseDate },
-          OR: [{ validTo: null }, { validTo: { gte: baseDate } }],
+          OR: [
+            { validTo: null },
+            { validTo: { gte: baseDate } },
+          ],
+
+          // solape real con el rango horario
+          NOT: [
+            {
+              OR: [
+                { endTime: { lte: startTime } },
+                { startTime: { gte: endTime } },
+              ],
+            },
+          ],
         },
-        orderBy: { validFrom: 'desc' },
       });
 
-      if (!shift) return { count: 0 };
+      if (!shifts.length) {
+        return { count: 0 };
+      }
 
       const dayBefore = new Date(baseDate);
       dayBefore.setDate(dayBefore.getDate() - 1);
       dayBefore.setHours(23, 59, 59, 999);
 
-      return this.prisma.shift.update({
-        where: { id: shift.id },
-        data: { validTo: dayBefore },
-      });
+      let created = 0;
+
+      for (const shift of shifts) {
+
+        // cerramos el turno original
+        await this.prisma.shift.update({
+          where: { id: shift.id },
+          data: { validTo: dayBefore },
+        });
+
+        // parte izquierda
+        if (shift.startTime < startTime) {
+          await this.prisma.shift.create({
+            data: {
+              scheduleId,
+              weekday,
+              startTime: shift.startTime,
+              endTime: startTime,
+              validFrom: baseDate,
+              validTo: shift.validTo,
+            },
+          });
+
+          created++;
+        }
+
+        // parte derecha
+        if (shift.endTime > endTime) {
+          await this.prisma.shift.create({
+            data: {
+              scheduleId,
+              weekday,
+              startTime: endTime,
+              endTime: shift.endTime,
+              validFrom: baseDate,
+              validTo: shift.validTo,
+            },
+          });
+
+          created++;
+        }
+      }
+
+      return {
+        count: shifts.length,
+        created,
+      };
     }
 
     throw new BadRequestException('Modo de borrado no soportado');
