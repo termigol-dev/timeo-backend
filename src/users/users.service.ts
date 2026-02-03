@@ -1,11 +1,12 @@
 import {
 Injectable,
 ForbiddenException,
-NotFoundException,
 } from '@nestjs/common';
+
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { BadRequestException, NotFoundException } from '@nestjs/common';
 
 /* ───────── CONFIG ───────── */
 const SUPERADMIN_EMAIL =
@@ -238,6 +239,35 @@ return {
 }
 
 /* ───────── ADMIN ACTIONS ───────── */
+
+async uploadUserPhoto(userId: string, file: Express.Multer.File) {
+
+  if (!file) {
+    throw new BadRequestException('No se ha enviado ninguna imagen');
+  }
+
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new NotFoundException('Usuario no encontrado');
+  }
+
+  // ⚠️ de momento lo guardamos como base64
+  // (luego si quieres lo pasamos a S3 / disco)
+  const base64 = file.buffer.toString('base64');
+  const mime = file.mimetype;
+
+  const photo = `data:${mime};base64,${base64}`;
+
+  return this.prisma.user.update({
+    where: { id: userId },
+    data: {
+      photo,
+    },
+  });
+}
 
 async updateRole(
 requestUser: any,
