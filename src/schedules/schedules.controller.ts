@@ -126,25 +126,25 @@ export class SchedulesController {
   /* ======================================================
      VER HORARIO ACTIVO (EMPLEADO / ADMIN)
   ====================================================== */
-@Get('user/:userId/active')
-@Roles(
+  @Get('user/:userId/active')
+  @Roles(
     Role.SUPERADMIN,
     Role.ADMIN_EMPRESA,
     Role.ADMIN_SUCURSAL,
     Role.EMPLEADO,
   )
-getActiveSchedule(
-  @Param('userId') userId: string,
-  @Query('weekStart') weekStart?: string,
-) {
-  console.log('📅 CONTROLLER getActiveSchedule', { userId, weekStart });
+  getActiveSchedule(
+    @Param('userId') userId: string,
+    @Query('weekStart') weekStart?: string,
+  ) {
+    console.log('📅 CONTROLLER getActiveSchedule', { userId, weekStart });
 
-  return this.schedulesService.getActiveSchedule(userId, weekStart);
-}
+    return this.schedulesService.getActiveSchedule(userId, weekStart);
+  }
 
   /* ======================================================
     🆕 AÑADIR EXCEPCIONES DE TURNO
- ====================================================== */
+====================================================== */
   @Post(':scheduleId/exceptions')
   @Roles(
     Role.SUPERADMIN,
@@ -156,11 +156,11 @@ getActiveSchedule(
     @Body()
     body: {
       exceptions: {
-        type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF';
+        type: 'MODIFIED_SHIFT' | 'EXTRA_SHIFT' | 'DAY_OFF' | 'VACATION';
         date: string;
         startTime?: string;
         endTime?: string;
-        //mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+        mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
       }[];
     },
   ) {
@@ -174,7 +174,6 @@ getActiveSchedule(
       body.exceptions,
     );
   }
-
   /* ======================================================
      AÑADIR VACACIONES
   ====================================================== */
