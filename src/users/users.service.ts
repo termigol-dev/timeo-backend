@@ -108,7 +108,7 @@ export class UsersService {
     });
   }
 
-  /* ───────── PERFIL GLOBAL (SIN companyId) ───────── */  
+  /* ───────── PERFIL GLOBAL (SIN companyId) ───────── */
   async getUserById(
     requestUser: any,
     userId: string,
@@ -289,6 +289,51 @@ export class UsersService {
       id: user.id,
       email: user.email,
     };
+  }
+
+  /* ───────── LISTADO TODOS LOS EMPLEADOS ───────── */
+  async getAllEmployees(requestUser: any) {
+
+    const where: any = {
+      memberships: {
+        some: {},
+      },
+    };
+
+    // si no es superadmin, solo su empresa
+    if (requestUser.role !== Role.SUPERADMIN) {
+      where.memberships.some.companyId = requestUser.companyId;
+    }
+
+    const users = await this.prisma.user.findMany({
+      where,
+      include: {
+        memberships: true,
+      },
+      orderBy: { createdAt: 'desc' },
+    });
+
+    return users.map(u => {
+      const m =
+        requestUser.role === Role.SUPERADMIN
+          ? u.memberships[0]
+          : u.memberships.find(mm => mm.companyId === requestUser.companyId);
+
+      return {
+        id: u.id,
+        name: u.name,
+        firstSurname: u.firstSurname,
+        secondSurname: u.secondSurname,
+        dni: u.dni,
+        email: u.email,
+        photo: u.photo,
+        role: m?.role,
+        branchId: m?.branchId,
+        active: m?.active,
+        companyId: m?.companyId,
+        createdAt: u.createdAt,
+      };
+    });
   }
 
   /* ───────── ADMIN ACTIONS ───────── */
