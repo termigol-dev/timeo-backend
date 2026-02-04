@@ -15,12 +15,37 @@ import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
 
+/* ============================================================
+   ENDPOINT GLOBAL (SIN companyId)
+   /users/:id
+============================================================ */
+
+@Controller('users')
+@UseGuards(JwtGuard, RolesGuard)
+export class UsersGlobalController {
+  constructor(private readonly usersService: UsersService) {}
+
+  @Get(':id')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  getOne(
+    @Req() req,
+    @Param('id') id: string,
+  ) {
+    return this.usersService.getUserById(req.user, id);
+  }
+}
+
+/* ============================================================
+   ENDPOINTS POR EMPRESA
+   /companies/:companyId/employees
+============================================================ */
+
 @Controller('companies/:companyId/employees')
 @UseGuards(JwtGuard, RolesGuard)
 export class UsersController {
   constructor(private readonly usersService: UsersService) {}
 
-  /* ───────── LISTADO EMPLEADOS ───────── */
+  /* ───────── LISTADO EMPLEADOS EMPRESA ───────── */
   @Get()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
   list(
