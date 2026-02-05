@@ -25,7 +25,7 @@ export class GlobalUsersController {
 
   constructor(
     private readonly usersService: UsersService,
-  ) {}
+  ) { }
 
   @Get()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
@@ -46,7 +46,7 @@ export class UsersGlobalController {
 
   constructor(
     private readonly usersService: UsersService,
-  ) {}
+  ) { }
 
   @Get(':id')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
@@ -65,6 +65,9 @@ export class UsersGlobalController {
     @Param('id') id: string,
     @Body() body,
   ) {
+
+    console.log('➡️ PATCH /users/:id', id, body);
+
     return this.usersService.updateUser(
       req.user,
       id,
@@ -84,6 +87,10 @@ export class UsersGlobalController {
     @Param('id') id: string,
     @Body() body: { photo: string },
   ) {
+
+    console.log('➡️ uploadPhoto controller', id, body?.photo?.length);
+    console.log('➡️ POST /users/:id/photo', id, body?.photo?.slice(0, 30));
+
     return this.usersService.uploadUserPhoto(
       id,
       body.photo,
@@ -101,7 +108,7 @@ export class UsersController {
 
   constructor(
     private readonly usersService: UsersService,
-  ) {}
+  ) { }
 
   /* ───────── LISTADO EMPLEADOS EMPRESA ───────── */
   @Get()
@@ -224,6 +231,10 @@ export class UsersController {
       id,
     );
   }
+
+  /* ───────── ACTUALIZAR USUARIO ───────── */
+
+
 
   /* ───────── BORRADO DEFINITIVO (SOLO PRUEBAS) ───────── */
   @Delete(':id/hard')

@@ -363,6 +363,7 @@ export class UsersService {
       data: { role: newRole },
     });
   }
+
   async updateUser(
     authUser,
     userId: string,
@@ -374,6 +375,8 @@ export class UsersService {
       email?: string;
     },
   ) {
+
+    console.log('🧠 updateUser service', userId, data);
 
     // opcional: aquí puedes meter luego control de permisos finos
 
@@ -389,32 +392,27 @@ export class UsersService {
     });
   }
 
-  async uploadUserPhoto(userId: string, file: any) {
+  async uploadUserPhoto(userId: string, photo: string) {
 
-    if (!file) {
-      throw new BadRequestException('No se ha enviado ninguna imagen');
-    }
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
-
-    if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
-
-    const base64 = file.buffer.toString('base64');
-    const mime = file.mimetype;
-
-    const photo = `data:${mime};base64,${base64}`;
-
-    return this.prisma.user.update({
-      where: { id: userId },
-      data: {
-        photo,
-      },
-    });
+  if (!photo) {
+    throw new BadRequestException('No se ha enviado ninguna imagen');
   }
+
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new NotFoundException('Usuario no encontrado');
+  }
+
+  return this.prisma.user.update({
+    where: { id: userId },
+    data: {
+      photo,   // ya viene como data:image/...;base64,...
+    },
+  });
+}
 
   async updateBranch(
     requestUser: any,
