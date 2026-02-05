@@ -5,6 +5,7 @@ import {
   NotFoundException,
 } from '@nestjs/common';
 
+import cloudinary from '../common/cloudinary';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
@@ -98,7 +99,7 @@ export class UsersService {
         secondSurname: u.secondSurname,
         dni: u.dni,
         email: u.email,
-        photoUrl: u.photoUrl,
+        photo: u.photo,
         active: m.active,
         role: m.role,
         branchId: m.branchId,
@@ -391,10 +392,12 @@ export class UsersService {
       },
     });
   }
+async uploadUserPhoto(
+  userId: string,
+  base64: string,
+) {
 
-  async uploadUserPhoto(userId: string, photo: string) {
-
-  if (!photo) {
+  if (!base64) {
     throw new BadRequestException('No se ha enviado ninguna imagen');
   }
 
@@ -406,10 +409,22 @@ export class UsersService {
     throw new NotFoundException('Usuario no encontrado');
   }
 
+  const result = await cloudinary.uploader.upload(base64, {
+    folder: 'timeo/users',
+    public_id: userId,
+    overwrite: true,
+    resource_type: 'image',
+    transformation: [
+      { width: 512, height: 512, crop: 'fill' },
+      { quality: 'auto' },
+      { fetch_format: 'auto' },
+    ],
+  });
+
   return this.prisma.user.update({
     where: { id: userId },
     data: {
-      photo,   // ya viene como data:image/...;base64,...
+      photo: result.secure_url,
     },
   });
 }
