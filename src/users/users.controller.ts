@@ -23,7 +23,9 @@ import { Role } from '@prisma/client';
 @UseGuards(JwtGuard, RolesGuard)
 export class GlobalUsersController {
 
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+  ) {}
 
   @Get()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
@@ -34,13 +36,17 @@ export class GlobalUsersController {
 
 /* ============================================================
    USUARIO POR ID (GLOBAL, SIN companyId)
-   GET /users/:id
+   GET   /users/:id
+   PATCH /users/:id
+   POST  /users/:id/photo   (SIN MULTER)
 ============================================================ */
 @Controller('users')
 @UseGuards(JwtGuard, RolesGuard)
 export class UsersGlobalController {
 
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+  ) {}
 
   @Get(':id')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
@@ -49,6 +55,39 @@ export class UsersGlobalController {
     @Param('id') id: string,
   ) {
     return this.usersService.getUserById(req.user, id);
+  }
+
+  /* ✅ ESTE ES EL QUE TE FALTABA */
+  @Patch(':id')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  update(
+    @Req() req,
+    @Param('id') id: string,
+    @Body() body,
+  ) {
+    return this.usersService.updateUser(
+      req.user,
+      id,
+      body,
+    );
+  }
+
+  /*
+    👉 Se espera:
+    {
+      photo: "data:image/jpeg;base64,...."
+    }
+  */
+  @Post(':id/photo')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
+  uploadPhoto(
+    @Param('id') id: string,
+    @Body() body: { photo: string },
+  ) {
+    return this.usersService.uploadUserPhoto(
+      id,
+      body.photo,
+    );
   }
 }
 
@@ -60,7 +99,9 @@ export class UsersGlobalController {
 @UseGuards(JwtGuard, RolesGuard)
 export class UsersController {
 
-  constructor(private readonly usersService: UsersService) {}
+  constructor(
+    private readonly usersService: UsersService,
+  ) {}
 
   /* ───────── LISTADO EMPLEADOS EMPRESA ───────── */
   @Get()

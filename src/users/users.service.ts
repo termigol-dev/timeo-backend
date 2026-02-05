@@ -363,6 +363,31 @@ export class UsersService {
       data: { role: newRole },
     });
   }
+  async updateUser(
+    authUser,
+    userId: string,
+    data: {
+      name?: string;
+      firstSurname?: string;
+      secondSurname?: string;
+      dni?: string;
+      email?: string;
+    },
+  ) {
+
+    // opcional: aquí puedes meter luego control de permisos finos
+
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        name: data.name,
+        firstSurname: data.firstSurname,
+        secondSurname: data.secondSurname,
+        dni: data.dni,
+        email: data.email,
+      },
+    });
+  }
 
   async uploadUserPhoto(userId: string, file: any) {
 
