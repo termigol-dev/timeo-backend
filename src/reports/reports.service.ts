@@ -1,12 +1,20 @@
-import { Injectable } from '@nestjs/common';
+import {
+  Injectable,
+  ForbiddenException,
+} from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role, RecordType } from '@prisma/client';
+
 
 @Injectable()
 export class ReportsService {
   constructor(
     private prisma: PrismaService,
   ) { }
+
+  /* =========================================================
+     (NO TOCAMOS) – listado agregado antiguo
+  ========================================================= */
 
   async getReportsForUser(
     user: {
@@ -20,14 +28,11 @@ export class ReportsService {
   ) {
     const where: any = {};
 
-    /* ───────── FILTROS FECHA ───────── */
     if (from || to) {
       where.createdAt = {};
       if (from) where.createdAt.gte = new Date(from);
       if (to) where.createdAt.lte = new Date(to);
     }
-
-    /* ───────── VISIBILIDAD POR ROL (CORRECTO CON MEMBERSHIPS) ───────── */
 
     if (user.role === Role.EMPLEADO) {
       where.userId = user.id;
@@ -64,8 +69,6 @@ export class ReportsService {
     const canSeeTotals =
       user.role === Role.ADMIN_EMPRESA ||
       user.role === Role.SUPERADMIN;
-
-    /* ───────── AGRUPACIÓN SIMPLE IN / OUT ───────── */
 
     const grouped = new Map<string, any>();
 
@@ -138,16 +141,95 @@ export class ReportsService {
         Math.round(totalHours * 100) / 100,
     };
   }
-  async getDailyReportForUser(
-    user: {
+
+  /* =========================================================
+     NUEVO MÉTODO – SIEMPRE CON userId OBJETIVO
+  ========================================================= */
+
+  async getDailyReport(
+    requestUser: {
       id: string;
       role: Role;
       companyId: string;
       branchId: string | null;
     },
+    targetUserId: string,
     from: string,
     to: string,
   ) {
+
+    /* -------------------------------
+       permisos
+    --------------------------------*/
+
+    if (requestUser.role === Role.EMPLEADO) {
+
+      if (requestUser.id !== targetUserId) {
+        throw new ForbiddenException();
+      }
+
+    } else {
+
+      const membership = await this.prisma.membership.findFirst({
+        where: {
+          userId: targetUserId,
+          companyId: requestUser.companyId,
+          ...(requestUser.role === Role.ADMIN_SUCURSAL
+            ? { branchId: requestUser.branchId }
+            : {}),
+        },
+      });
+
+      if (!membership) {
+        throw new ForbiddenException();
+      }
+    }
+
+    /* reutilizamos tu lógica real */
+    return this.getDailyReportForUser(
+      requestUser,
+      targetUserId,
+      from,
+      to,
+    );
+  }
+
+  /* =========================================================
+     TU FUNCIÓN REAL DE CÁLCULO (NO SE TOCA)
+  ========================================================= */
+
+  async getDailyReportForUser(
+    requestUser: {
+      id: string;
+      role: Role;
+      companyId: string;
+      branchId: string | null;
+    },
+    targetUserId: string,
+    from: string,
+    to: string,
+  ) {
+
+    const membership = await this.prisma.membership.findFirst({
+      where: {
+        userId: targetUserId,
+        companyId: requestUser.companyId,
+        ...(requestUser.role === Role.ADMIN_SUCURSAL
+          ? { branchId: requestUser.branchId }
+          : {}),
+      },
+    });
+
+    if (!membership) {
+      if (
+        requestUser.role === Role.EMPLEADO &&
+        requestUser.id === targetUserId
+      ) {
+        // permitido
+      } else {
+        throw new ForbiddenException();
+      }
+    }
 
     const fromDate = new Date(from);
     const toDate = new Date(to);
@@ -158,7 +240,7 @@ export class ReportsService {
 
     const records = await this.prisma.record.findMany({
       where: {
-        userId: user.id,
+        userId: targetUserId,
         createdAt: {
           gte: fromDate,
           lte: toDate,
@@ -168,12 +250,12 @@ export class ReportsService {
     });
 
     /* ---------------------------------------------
-       INCIDENTES (YA CALCULADOS)
+       INCIDENTES
     --------------------------------------------- */
 
     const incidents = await this.prisma.incident.findMany({
       where: {
-        userId: user.id,
+        userId: targetUserId,
         occurredAt: {
           gte: fromDate,
           lte: toDate,
@@ -183,18 +265,15 @@ export class ReportsService {
 
     /* ---------------------------------------------
        SHIFTS HISTÓRICOS
-       (usaremos validFrom / validTo después por día)
     --------------------------------------------- */
 
     const shifts = await this.prisma.shift.findMany({
       where: {
         schedule: {
-          userId: user.id,
+          userId: targetUserId,
         },
         AND: [
-          {
-            validFrom: { lte: toDate },
-          },
+          { validFrom: { lte: toDate } },
           {
             OR: [
               { validTo: null },
@@ -206,19 +285,28 @@ export class ReportsService {
     });
 
     /* ---------------------------------------------
-       INDEXADO RÁPIDO
+       INDEXADO POR DÍA
+       (sin toISOString)
     --------------------------------------------- */
 
     const recordsByDay = new Map<string, any[]>();
     const incidentsByDay = new Map<string, any[]>();
 
+    const toDayKey = (d: Date) => {
+      const y = d.getFullYear();
+      const m = String(d.getMonth() + 1).padStart(2, '0');
+      const da = String(d.getDate()).padStart(2, '0');
+      return `${y}-${m}-${da}`;
+    };
+
     for (const r of records) {
-      const d = r.createdAt.toISOString().slice(0, 10);
+      const d = toDayKey(r.createdAt);
       if (!recordsByDay.has(d)) recordsByDay.set(d, []);
       recordsByDay.get(d)!.push(r);
     }
+
     for (const i of incidents) {
-      const d = i.occurredAt.toISOString().slice(0, 10);
+      const d = toDayKey(i.occurredAt);
       if (!incidentsByDay.has(d)) incidentsByDay.set(d, []);
       incidentsByDay.get(d)!.push(i);
     }
@@ -229,21 +317,22 @@ export class ReportsService {
 
     const days: any[] = [];
 
-    for (
-      let d = new Date(fromDate);
-      d <= toDate;
-      d.setDate(d.getDate() + 1)
-    ) {
+    const cursor = new Date(fromDate);
+    cursor.setHours(0, 0, 0, 0);
 
-      const day = d.toISOString().slice(0, 10);
-      const weekday = d.getDay(); // 0..6
+    const end = new Date(toDate);
+    end.setHours(0, 0, 0, 0);
 
-      const dayStart = new Date(d);
-      dayStart.setHours(0, 0, 0, 0);
+    while (cursor <= end) {
 
-      /* -----------------------------------------
-         shifts válidos ese día
-      ----------------------------------------- */
+      const dayKey = toDayKey(cursor);
+
+      // JS: 0..6 (domingo..sábado)
+      // Timeo: 1..7 (lunes..domingo)
+      const jsDay = cursor.getDay();
+      const weekday = jsDay === 0 ? 7 : jsDay;
+
+      const dayStart = new Date(cursor);
 
       const dayShifts = shifts.filter(s => {
 
@@ -259,23 +348,23 @@ export class ReportsService {
       });
 
       days.push({
-        date: day,
+        date: dayKey,
         shifts: dayShifts.map(s => ({
           id: s.id,
           startTime: s.startTime,
           endTime: s.endTime,
         })),
-        records: (recordsByDay.get(day) || []).map(r => ({
+        records: (recordsByDay.get(dayKey) || []).map(r => ({
           id: r.id,
           type: r.type,
           createdAt: r.createdAt,
         })),
-        incidents: incidentsByDay.get(day) || [],
+        incidents: incidentsByDay.get(dayKey) || [],
       });
+
+      cursor.setDate(cursor.getDate() + 1);
     }
 
     return { days };
   }
-
-
 }
