@@ -9,7 +9,7 @@ import { randomUUID } from 'crypto';
 
 @Injectable()
 export class BranchesService {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   /* =====================
      LISTAR SUCURSALES
@@ -127,6 +127,12 @@ export class BranchesService {
 
     if (!branch || branch.companyId !== companyId) {
       throw new NotFoundException('Sucursal no encontrada');
+    }
+
+    if (!branch.active) {
+      throw new ForbiddenException(
+        'La sucursal está desactivada',
+      );
     }
 
     if (user.role !== Role.SUPERADMIN) {

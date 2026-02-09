@@ -8,7 +8,7 @@ import { PrismaService } from '../../prisma/prisma.service';
 
 @Injectable()
 export class TabletGuard implements CanActivate {
-  constructor(private prisma: PrismaService) {}
+  constructor(private prisma: PrismaService) { }
 
   async canActivate(context: ExecutionContext): Promise<boolean> {
     const req = context.switchToHttp().getRequest();
@@ -24,17 +24,16 @@ export class TabletGuard implements CanActivate {
     }
 
     // ✅ USAMOS findFirst (NO findUnique)
-    const branch = await this.prisma.branch.findFirst({
+    const branch = await this.prisma.branch.findUnique({
       where: {
         tabletToken: token,
-        active: true,
       },
       include: {
         company: true,
       },
     });
 
-    if (!branch) {
+    if (!branch || !branch.active || !branch.tabletActive) {
       throw new UnauthorizedException('Invalid tablet token');
     }
 
