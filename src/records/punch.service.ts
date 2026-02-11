@@ -1,86 +1,85 @@
-import {
-  Injectable,
-  BadRequestException,
-} from '@nestjs/common';
+import { Injectable, BadRequestException } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import {
   RecordType,
   IncidentType,
   IncidentBy,
 } from '@prisma/client';
-import { PunchService } from '../records/punch.service';
 
 type ScheduleEvaluation = {
   status: 'OK' | 'EARLY' | 'LATE' | 'NO_SHIFT';
-  expectedTime?: string; // "09:00"
+  expectedTime?: string;
   diffMinutes?: number;
 };
 
 @Injectable()
-export class TabletService {
+export class PunchService {
 
   constructor(
     private readonly prisma: PrismaService,
-    private readonly punchService: PunchService,
-  ) { }
+  ) {}
 
-  /* ======================================================
-     EMPLEADOS DE LA TABLET
-  ====================================================== */
-  async getEmployees(branchId: string) {
-    return this.prisma.membership.findMany({
-      where: {
-        branchId,
-        active: true,
-        user: { active: true },
-      },
-      include: {
-        user: {
-          include: {
-            records: {
-              take: 1,
-              orderBy: { createdAt: 'desc' },
-            },
-          },
-        },
-      },
-      orderBy: {
-        user: { firstSurname: 'asc' },
-      },
-    });
-  }
+  async punch(params: {
+    userId: string;
+    companyId: string;
+    branchId: string;
+    type: RecordType;
+    createdBy: 'TABLET' | 'MOBILE';
+  }) {
 
-  /* ======================================================
-     ENTRADA (IN)
-  ====================================================== */
-  async recordIn(userId: string, branchId: string, companyId: string) {
+    const { userId, companyId, branchId, type } = params;
 
-    return this.punchService.punch({
+    const membership = await this.getActiveMembership(
+      userId,
+      companyId,
+      branchId,
+    );
+
+    const lastRecord = await this.getLastRecord(membership.id);
+
+    if (type === RecordType.IN && lastRecord?.type === RecordType.IN) {
+      throw new BadRequestException('Already IN');
+    }
+
+    if (type === RecordType.OUT && (!lastRecord || lastRecord.type === RecordType.OUT)) {
+      throw new BadRequestException('No active IN');
+    }
+
+    const now = new Date();
+
+    const evaluation = await this.evaluateSchedule({
       userId,
       branchId,
-      companyId,
-      type: RecordType.IN,
-      createdBy: 'TABLET',
+      date: now,
+      type,
     });
-  }
 
-  /* ======================================================
-     SALIDA (OUT)
-  ====================================================== */
-  async recordOut(userId: string, branchId: string, companyId: string) {
-
-    return this.punchService.punch({
+    const record = await this.createRecord({
+      type,
       userId,
-      branchId,
       companyId,
-      type: RecordType.OUT,
-      createdBy: 'TABLET',
+      branchId,
+      membershipId: membership.id,
     });
+
+    await this.handleIncidentFromEvaluation({
+      evaluation,
+      recordType: type,
+      recordId: record.id,
+      recordCreatedAt: record.createdAt,
+      userId,
+      membershipId: membership.id,
+      companyId,
+      branchId,
+    });
+
+    return record;
   }
 
   /* ======================================================
-     🧠 EVALUACIÓN DE HORARIO (NO GUARDA)
+     🧠 EVALUACIÓN DE HORARIO
   ====================================================== */
+
   private async evaluateSchedule({
     userId,
     branchId,
@@ -92,18 +91,18 @@ export class TabletService {
     date: Date;
     type: RecordType;
   }): Promise<ScheduleEvaluation> {
+
     const weekday = date.getDay() === 0 ? 7 : date.getDay();
 
-    const schedule =
-      await this.prisma.schedule.findFirst({
-        where: {
-          userId,
-          branchId,
-          validFrom: { lte: date },
-          OR: [{ validTo: null }, { validTo: { gte: date } }],
-        },
-        include: { shifts: true },
-      });
+    const schedule = await this.prisma.schedule.findFirst({
+      where: {
+        userId,
+        branchId,
+        validFrom: { lte: date },
+        OR: [{ validTo: null }, { validTo: { gte: date } }],
+      },
+      include: { shifts: true },
+    });
 
     if (!schedule) {
       return { status: 'NO_SHIFT' };
@@ -117,16 +116,14 @@ export class TabletService {
       return { status: 'NO_SHIFT' };
     }
 
-    const nowMinutes =
-      date.getHours() * 60 + date.getMinutes();
+    const nowMinutes = date.getHours() * 60 + date.getMinutes();
 
     if (type === RecordType.IN) {
+
       const target = shiftsOfDay
         .map(s => ({
           ...s,
-          startMinutes: this.timeToMinutes(
-            s.startTime,
-          ),
+          startMinutes: this.timeToMinutes(s.startTime),
         }))
         .sort(
           (a, b) =>
@@ -157,13 +154,11 @@ export class TabletService {
     );
   }
 
-  /* ======================================================
-     REGLAS DE TOLERANCIA ±15 min
-  ====================================================== */
   private evaluateDiff(
     diffMinutes: number,
     expectedTime: string,
   ): ScheduleEvaluation {
+
     if (Math.abs(diffMinutes) <= 15) {
       return { status: 'OK', expectedTime };
     }
@@ -184,8 +179,9 @@ export class TabletService {
   }
 
   /* ======================================================
-     🎯 CREAR INCIDENCIA SEGÚN EVALUACIÓN
+     🎯 INCIDENCIAS
   ====================================================== */
+
   private async handleIncidentFromEvaluation({
     evaluation,
     recordType,
@@ -205,11 +201,14 @@ export class TabletService {
     companyId: string;
     branchId: string;
   }) {
+
     if (evaluation.status === 'OK') return;
 
     let type: IncidentType | null = null;
 
     if (evaluation.status === 'NO_SHIFT') {
+
+      // ⚠️ esto es exactamente lo que ya tenías
       type =
         recordType === RecordType.IN
           ? IncidentType.FORGOT_IN
@@ -242,18 +241,15 @@ export class TabletService {
         occurredAt: recordCreatedAt,
         expectedAt: evaluation.expectedTime
           ? this.buildExpectedDate(
-            recordCreatedAt,
-            evaluation.expectedTime,
-          )
+              recordCreatedAt,
+              evaluation.expectedTime,
+            )
           : null,
       },
     });
   }
 
-  private buildExpectedDate(
-    baseDate: Date,
-    time: string,
-  ) {
+  private buildExpectedDate(baseDate: Date, time: string) {
     const [h, m] = time.split(':').map(Number);
     const d = new Date(baseDate);
     d.setHours(h, m, 0, 0);
@@ -266,7 +262,7 @@ export class TabletService {
   }
 
   /* ======================================================
-     HELPERS PRIVADOS
+     HELPERS
   ====================================================== */
 
   private async getActiveMembership(
@@ -274,15 +270,15 @@ export class TabletService {
     companyId: string,
     branchId: string,
   ) {
-    const membership =
-      await this.prisma.membership.findFirst({
-        where: {
-          userId,
-          companyId,
-          branchId,
-          active: true,
-        },
-      });
+
+    const membership = await this.prisma.membership.findFirst({
+      where: {
+        userId,
+        companyId,
+        branchId,
+        active: true,
+      },
+    });
 
     if (!membership) {
       throw new BadRequestException(
@@ -293,9 +289,8 @@ export class TabletService {
     return membership;
   }
 
-  private async getLastRecord(
-    membershipId: string,
-  ) {
+  private async getLastRecord(membershipId: string) {
+
     return this.prisma.record.findFirst({
       where: { membershipId },
       orderBy: { createdAt: 'desc' },
@@ -309,6 +304,7 @@ export class TabletService {
     branchId: string;
     membershipId: string;
   }) {
+
     return this.prisma.record.create({
       data: {
         type: data.type,
