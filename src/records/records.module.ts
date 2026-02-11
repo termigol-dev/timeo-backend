@@ -9,6 +9,6 @@ import { PunchService } from './punch.service';
   imports: [PrismaModule,IncidentsModule],
   controllers: [RecordsController],
   providers: [RecordsService,  PunchService],
-  exports: [RecordsService],   // 👈 ESTO ES LO IMPORTANTE
+  exports: [PunchService],   // 👈 ESTO ES LO IMPORTANTE
 })
 export class RecordsModule {}
