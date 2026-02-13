@@ -75,26 +75,27 @@ export class UsersGlobalController {
     );
   }
 
-  /*
-    👉 Se espera:
-    {
-      photo: "data:image/jpeg;base64,...."
-    }
-  */
   @Post(':id/photo')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA, Role.ADMIN_SUCURSAL)
-  uploadPhoto(
+  async uploadPhoto(
     @Param('id') id: string,
-    @Body() body: { photo: string },
+    @Body() body: { photoUrl: string },
   ) {
 
-    console.log('➡️ uploadPhoto controller', id, body?.photo?.length);
-    console.log('➡️ POST /users/:id/photo', id, body?.photo?.slice(0, 30));
+    console.log('➡️ uploadPhoto controller', id, body?.photoUrl?.length);
+    console.log('➡️ POST /users/:id/photo', id, body?.photoUrl?.slice(0, 30));
 
-    return this.usersService.uploadUserPhoto(
+    const user = await this.usersService.uploadUserPhoto(
       id,
-      body.photo,
+      body.photoUrl,
     );
+
+    console.log('✅ user after update (controller):', {
+      id: user.id,
+      photoUrl: user.photoUrl,
+    });
+
+    return user;
   }
 }
 

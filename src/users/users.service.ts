@@ -99,7 +99,7 @@ export class UsersService {
         secondSurname: u.secondSurname,
         dni: u.dni,
         email: u.email,
-        photo: u.photo,
+        photoUrl: u.photoUrl,
         active: m.active,
         role: m.role,
         branchId: m.branchId,
@@ -162,7 +162,7 @@ export class UsersService {
       secondSurname: user.secondSurname,
       dni: user.dni,
       email: user.email,
-      photo: user.photo,   // ✅ campo real
+      photoUrl: user.photoUrl,   // ✅ campo real
       role: m.role,
       branchId: m.branchId,
       active: m.active,
@@ -327,7 +327,7 @@ export class UsersService {
         secondSurname: u.secondSurname,
         dni: u.dni,
         email: u.email,
-        photo: u.photo,
+        photoUrl: u.photoUrl,
         role: m?.role,
         branchId: m?.branchId,
         active: m?.active,
@@ -392,42 +392,63 @@ export class UsersService {
       },
     });
   }
-async uploadUserPhoto(
-  userId: string,
-  base64: string,
-) {
 
-  if (!base64) {
-    throw new BadRequestException('No se ha enviado ninguna imagen');
+  async uploadUserPhoto(
+    userId: string,
+    base64: string,
+  ) {
+
+    console.log('🧩 uploadUserPhoto service - start', {
+      userId,
+      base64Length: base64?.length,
+    });
+
+    if (!base64) {
+      throw new BadRequestException('No se ha enviado ninguna imagen');
+    }
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    console.log('🧩 uploadUserPhoto service - user found', {
+      id: user.id,
+    });
+
+    const result = await cloudinary.uploader.upload(base64, {
+      folder: 'timeo/users',
+      public_id: userId,
+      overwrite: true,
+      resource_type: 'image',
+      transformation: [
+        { width: 512, height: 512, crop: 'fill' },
+        { quality: 'auto' },
+        { fetch_format: 'auto' },
+      ],
+    });
+
+    console.log('🧩 uploadUserPhoto service - cloudinary result', {
+      secure_url: result.secure_url,
+    });
+
+    const updated = await this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        photoUrl: result.secure_url,
+      },
+    });
+
+    console.log('🧩 uploadUserPhoto service - saved user', {
+      id: updated.id,
+      photoUrl: updated.photoUrl,
+    });
+
+    return updated;
   }
-
-  const user = await this.prisma.user.findUnique({
-    where: { id: userId },
-  });
-
-  if (!user) {
-    throw new NotFoundException('Usuario no encontrado');
-  }
-
-  const result = await cloudinary.uploader.upload(base64, {
-    folder: 'timeo/users',
-    public_id: userId,
-    overwrite: true,
-    resource_type: 'image',
-    transformation: [
-      { width: 512, height: 512, crop: 'fill' },
-      { quality: 'auto' },
-      { fetch_format: 'auto' },
-    ],
-  });
-
-  return this.prisma.user.update({
-    where: { id: userId },
-    data: {
-      photo: result.secure_url,
-    },
-  });
-}
 
   async updateBranch(
     requestUser: any,
