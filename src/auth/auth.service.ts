@@ -64,6 +64,7 @@ export class AuthService {
       role: payload.role,
       companyId: payload.companyId,
       branchId: payload.branchId,
+      photoUrl: user.photoUrl ?? null,
     },
   };
 
