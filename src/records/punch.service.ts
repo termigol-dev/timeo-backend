@@ -23,70 +23,67 @@ export class PunchService {
    🧪 SIMULADOR (NO ESCRIBE EN DB)
 ====================================================== */
 
-  async simulateDay(params: {
-    userId: string;
-    companyId: string;
-    branchId: string;
-    date: string; // "2026-02-16"
-    events: { type: RecordType; time: string }[];
-  }) {
+  async simulateDay(body: any) {
 
-    const { userId, companyId, branchId, date, events } = params;
+    const {
+      userId,
+      companyId,
+      branchId,
+      date,
+      inTime,
+      outTime,
+    } = body;
 
-    console.log('🧪 SIMULATION START');
-    console.log('📅 Date:', date);
-    console.log('👤 User:', userId);
-    console.log('📦 Events:', events);
+    const events: { type: RecordType; createdAt: Date }[] = [];
 
-    const simulatedRecords: any[] = [];
-    const simulatedIncidents: any[] = [];
+    if (inTime) {
+      events.push({
+        type: RecordType.IN,
+        createdAt: new Date(`${date}T${inTime}:00`),
+      });
+    }
 
-    // ordenar eventos por hora
-    const ordered = [...events].sort((a, b) =>
-      a.time.localeCompare(b.time),
-    );
+    if (outTime) {
+      events.push({
+        type: RecordType.OUT,
+        createdAt: new Date(`${date}T${outTime}:00`),
+      });
+    }
 
-    for (const event of ordered) {
+    if (events.length === 0) {
+      throw new BadRequestException('No events to simulate');
+    }
 
-      const eventDate = new Date(`${date}T${event.time}:00`);
+    const incidents = [];
 
-      console.log('⏱ Evaluating event:', event.type, event.time);
+    for (const event of events) {
 
       const evaluation = await this.evaluateSchedule({
         userId,
         branchId,
-        date: eventDate,
+        date: event.createdAt,
         type: event.type,
-      });
-
-      console.log('🧠 Evaluation result:', evaluation);
-
-      simulatedRecords.push({
-        type: event.type,
-        createdAt: eventDate,
-        evaluation,
       });
 
       const incident = this.buildIncidentFromEvaluation({
         evaluation,
         recordType: event.type,
-        recordCreatedAt: eventDate,
+        recordCreatedAt: event.createdAt,
         userId,
         companyId,
         branchId,
       });
 
-      if (incident) {
-        console.log('🚨 Simulated incident:', incident.type);
-        simulatedIncidents.push(incident);
-      }
+      incidents.push({
+        event,
+        evaluation,
+        incident,
+      });
     }
 
-    console.log('🧪 SIMULATION END');
-
     return {
-      records: simulatedRecords,
-      incidents: simulatedIncidents,
+      simulatedEvents: events,
+      results: incidents,
     };
   }
 
