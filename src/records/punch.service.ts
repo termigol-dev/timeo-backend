@@ -17,7 +17,78 @@ export class PunchService {
 
   constructor(
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
+
+  /* ======================================================
+   🧪 SIMULADOR (NO ESCRIBE EN DB)
+====================================================== */
+
+  async simulateDay(params: {
+    userId: string;
+    companyId: string;
+    branchId: string;
+    date: string; // "2026-02-16"
+    events: { type: RecordType; time: string }[];
+  }) {
+
+    const { userId, companyId, branchId, date, events } = params;
+
+    console.log('🧪 SIMULATION START');
+    console.log('📅 Date:', date);
+    console.log('👤 User:', userId);
+    console.log('📦 Events:', events);
+
+    const simulatedRecords: any[] = [];
+    const simulatedIncidents: any[] = [];
+
+    // ordenar eventos por hora
+    const ordered = [...events].sort((a, b) =>
+      a.time.localeCompare(b.time),
+    );
+
+    for (const event of ordered) {
+
+      const eventDate = new Date(`${date}T${event.time}:00`);
+
+      console.log('⏱ Evaluating event:', event.type, event.time);
+
+      const evaluation = await this.evaluateSchedule({
+        userId,
+        branchId,
+        date: eventDate,
+        type: event.type,
+      });
+
+      console.log('🧠 Evaluation result:', evaluation);
+
+      simulatedRecords.push({
+        type: event.type,
+        createdAt: eventDate,
+        evaluation,
+      });
+
+      const incident = this.buildIncidentFromEvaluation({
+        evaluation,
+        recordType: event.type,
+        recordCreatedAt: eventDate,
+        userId,
+        companyId,
+        branchId,
+      });
+
+      if (incident) {
+        console.log('🚨 Simulated incident:', incident.type);
+        simulatedIncidents.push(incident);
+      }
+    }
+
+    console.log('🧪 SIMULATION END');
+
+    return {
+      records: simulatedRecords,
+      incidents: simulatedIncidents,
+    };
+  }
 
   async punch(params: {
     userId: string;
@@ -45,7 +116,15 @@ export class PunchService {
       throw new BadRequestException('No active IN');
     }
 
-    const now = new Date();
+    /* ======================================================
+       🧪 DEBUG TIME (SOLO SI EXISTE VARIABLE ENV)
+    ====================================================== */
+
+    const now = process.env.DEBUG_PUNCH_TIME
+      ? new Date(process.env.DEBUG_PUNCH_TIME)
+      : new Date();
+
+    /* ====================================================== */
 
     const evaluation = await this.evaluateSchedule({
       userId,
@@ -77,7 +156,7 @@ export class PunchService {
   }
 
   /* ======================================================
-     🧠 EVALUACIÓN DE HORARIO
+     🧠 EVALUACIÓN DE HORARIO (NUEVA LÓGICA JERÁRQUICA)
   ====================================================== */
 
   private async evaluateSchedule({
@@ -118,40 +197,91 @@ export class PunchService {
 
     const nowMinutes = date.getHours() * 60 + date.getMinutes();
 
+    const enriched = shiftsOfDay.map(s => ({
+      ...s,
+      startMinutes: this.timeToMinutes(s.startTime),
+      endMinutes: this.timeToMinutes(s.endTime),
+    }));
+
+    /* ============================
+       🔵 ENTRADA (IN)
+    ============================ */
     if (type === RecordType.IN) {
 
-      const target = shiftsOfDay
-        .map(s => ({
-          ...s,
-          startMinutes: this.timeToMinutes(s.startTime),
-        }))
-        .sort(
-          (a, b) =>
-            Math.abs(a.startMinutes - nowMinutes) -
-            Math.abs(b.startMinutes - nowMinutes),
-        )[0];
+      const upcoming = enriched
+        .filter(s => nowMinutes <= s.startMinutes)
+        .sort((a, b) => a.startMinutes - b.startMinutes)[0];
 
+      if (upcoming) {
+        return this.evaluateDiff(
+          nowMinutes - upcoming.startMinutes,
+          upcoming.startTime,
+        );
+      }
+
+      const active = enriched.find(
+        s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes,
+      );
+
+      if (active) {
+        return this.evaluateDiff(
+          nowMinutes - active.startMinutes,
+          active.startTime,
+        );
+      }
+
+      const lastPast = enriched
+        .filter(s => nowMinutes > s.endMinutes)
+        .sort((a, b) => b.endMinutes - a.endMinutes)[0];
+
+      if (lastPast) {
+        return this.evaluateDiff(
+          nowMinutes - lastPast.startMinutes,
+          lastPast.startTime,
+        );
+      }
+
+      return { status: 'NO_SHIFT' };
+    }
+
+    /* ============================
+       🔴 SALIDA (OUT)
+    ============================ */
+
+    const active = enriched.find(
+      s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes,
+    );
+
+    if (active) {
       return this.evaluateDiff(
-        nowMinutes - target.startMinutes,
-        target.startTime,
+        nowMinutes - active.endMinutes,
+        active.endTime,
       );
     }
 
-    const target = shiftsOfDay
-      .map(s => ({
-        ...s,
-        endMinutes: this.timeToMinutes(s.endTime),
-      }))
-      .sort(
-        (a, b) =>
-          Math.abs(a.endMinutes - nowMinutes) -
-          Math.abs(b.endMinutes - nowMinutes),
-      )[0];
+    const justEnded = enriched
+      .filter(s => nowMinutes >= s.endMinutes)
+      .sort((a, b) => b.endMinutes - a.endMinutes)[0];
 
-    return this.evaluateDiff(
-      nowMinutes - target.endMinutes,
-      target.endTime,
-    );
+    if (justEnded) {
+      return this.evaluateDiff(
+        nowMinutes - justEnded.endMinutes,
+        justEnded.endTime,
+      );
+    }
+
+    const upcoming = enriched
+      .filter(s => nowMinutes < s.startMinutes)
+      .sort((a, b) => a.startMinutes - b.startMinutes)[0];
+
+    if (upcoming) {
+      return this.evaluateDiff(
+        nowMinutes - upcoming.endMinutes,
+        upcoming.endTime,
+      );
+    }
+
+    return { status: 'NO_SHIFT' };
   }
 
   private evaluateDiff(
@@ -207,8 +337,6 @@ export class PunchService {
     let type: IncidentType | null = null;
 
     if (evaluation.status === 'NO_SHIFT') {
-
-      // ⚠️ esto es exactamente lo que ya tenías
       type =
         recordType === RecordType.IN
           ? IncidentType.FORGOT_IN
@@ -241,12 +369,72 @@ export class PunchService {
         occurredAt: recordCreatedAt,
         expectedAt: evaluation.expectedTime
           ? this.buildExpectedDate(
-              recordCreatedAt,
-              evaluation.expectedTime,
-            )
+            recordCreatedAt,
+            evaluation.expectedTime,
+          )
           : null,
       },
     });
+  }
+
+  /* ======================================================
+   🎯 CONSTRUCCIÓN DE INCIDENCIA (SIN DB)
+====================================================== */
+
+  private buildIncidentFromEvaluation({
+    evaluation,
+    recordType,
+    recordCreatedAt,
+    userId,
+    companyId,
+    branchId,
+  }: {
+    evaluation: ScheduleEvaluation;
+    recordType: RecordType;
+    recordCreatedAt: Date;
+    userId: string;
+    companyId: string;
+    branchId: string;
+  }) {
+
+    if (evaluation.status === 'OK') return null;
+
+    let type: IncidentType | null = null;
+
+    if (evaluation.status === 'NO_SHIFT') {
+      type =
+        recordType === RecordType.IN
+          ? IncidentType.FORGOT_IN
+          : IncidentType.FORGOT_OUT;
+    }
+
+    if (evaluation.status === 'EARLY') {
+      type = IncidentType.IN_EARLY;
+    }
+
+    if (evaluation.status === 'LATE') {
+      type =
+        recordType === RecordType.IN
+          ? IncidentType.IN_LATE
+          : IncidentType.OUT_LATE;
+    }
+
+    if (!type) return null;
+
+    return {
+      type,
+      userId,
+      companyId,
+      branchId,
+      occurredAt: recordCreatedAt,
+      expectedAt: evaluation.expectedTime
+        ? this.buildExpectedDate(
+          recordCreatedAt,
+          evaluation.expectedTime,
+        )
+        : null,
+      diffMinutes: evaluation.diffMinutes ?? null,
+    };
   }
 
   private buildExpectedDate(baseDate: Date, time: string) {
@@ -264,6 +452,7 @@ export class PunchService {
   /* ======================================================
      HELPERS
   ====================================================== */
+
 
   private async getActiveMembership(
     userId: string,
