@@ -23,48 +23,68 @@ export class PunchService {
    🧪 SIMULADOR (NO ESCRIBE EN DB)
 ====================================================== */
 
-  async simulateDay(body: any) {
+  async simulateDay(body: {
+    userId: string;
+    companyId: string;
+    branchId: string;
+    date: string;
+    inTime?: string | null;
+    outTime?: string | null;
+  }) {
 
-    const {
+
+    const { userId, companyId, branchId, date, inTime, outTime } = body;
+    console.log('🧪 SIMULATION INPUT:', {
       userId,
       companyId,
       branchId,
       date,
       inTime,
       outTime,
-    } = body;
+    });
+    console.log('SIMULATION INPUT:', body);
 
+    const results: any[] = [];
+
+    // Construimos eventos manualmente
     const events: { type: RecordType; createdAt: Date }[] = [];
 
     if (inTime) {
       events.push({
         type: RecordType.IN,
-        createdAt: new Date(`${date}T${inTime}:00`),
+        createdAt: this.buildLocalDate(date, inTime),
       });
     }
 
     if (outTime) {
       events.push({
         type: RecordType.OUT,
-        createdAt: new Date(`${date}T${outTime}:00`),
+        createdAt: this.buildLocalDate(date, outTime),
       });
     }
 
-    if (events.length === 0) {
-      throw new BadRequestException('No events to simulate');
-    }
-
-    const incidents = [];
+    console.log('Generated events:', events);
 
     for (const event of events) {
 
+      console.log('Simulating event:', event);
+      console.log('🕒 Local hours check:', {
+        hours: event.createdAt.getHours(),
+        minutes: event.createdAt.getMinutes(),
+      });
+      console.log('➡️ About to evaluate:', {
+        userId,
+        branchId,
+        eventDate: event.createdAt,
+        type: event.type,
+      });
       const evaluation = await this.evaluateSchedule({
         userId,
         branchId,
         date: event.createdAt,
         type: event.type,
       });
-
+      console.log('📊 Evaluation result:', evaluation);
       const incident = this.buildIncidentFromEvaluation({
         evaluation,
         recordType: event.type,
@@ -74,7 +94,7 @@ export class PunchService {
         branchId,
       });
 
-      incidents.push({
+      results.push({
         event,
         evaluation,
         incident,
@@ -82,8 +102,7 @@ export class PunchService {
     }
 
     return {
-      simulatedEvents: events,
-      results: incidents,
+      simulatedEvents: results,
     };
   }
 
@@ -444,6 +463,13 @@ export class PunchService {
   private timeToMinutes(time: string) {
     const [h, m] = time.split(':').map(Number);
     return h * 60 + m;
+  }
+
+  private buildLocalDate(date: string, time: string) {
+    const [year, month, day] = date.split('-').map(Number);
+    const [h, m] = time.split(':').map(Number);
+
+    return new Date(year, month - 1, day, h, m, 0, 0);
   }
 
   /* ======================================================
