@@ -20,159 +20,7 @@ export class PunchService {
   ) { }
 
   /* ======================================================
-   🧪 SIMULADOR (NO ESCRIBE EN DB)
-====================================================== */
-
-  async simulateDay(body: {
-    userId: string;
-    companyId: string;
-    branchId: string;
-    date: string;
-    inTime?: string | null;
-    outTime?: string | null;
-  }) {
-
-
-    const { userId, companyId, branchId, date, inTime, outTime } = body;
-    console.log('🧪 SIMULATION INPUT:', {
-      userId,
-      companyId,
-      branchId,
-      date,
-      inTime,
-      outTime,
-    });
-    console.log('SIMULATION INPUT:', body);
-
-    const results: any[] = [];
-
-    // Construimos eventos manualmente
-    const events: { type: RecordType; createdAt: Date }[] = [];
-
-    if (inTime) {
-      events.push({
-        type: RecordType.IN,
-        createdAt: this.buildLocalDate(date, inTime),
-      });
-    }
-
-    if (outTime) {
-      events.push({
-        type: RecordType.OUT,
-        createdAt: this.buildLocalDate(date, outTime),
-      });
-    }
-
-    console.log('Generated events:', events);
-
-    for (const event of events) {
-
-      console.log('Simulating event:', event);
-      console.log('🕒 Local hours check:', {
-        hours: event.createdAt.getHours(),
-        minutes: event.createdAt.getMinutes(),
-      });
-      console.log('➡️ About to evaluate:', {
-        userId,
-        branchId,
-        eventDate: event.createdAt,
-        type: event.type,
-      });
-      const evaluation = await this.evaluateSchedule({
-        userId,
-        branchId,
-        date: event.createdAt,
-        type: event.type,
-      });
-      console.log('📊 Evaluation result:', evaluation);
-      const incident = this.buildIncidentFromEvaluation({
-        evaluation,
-        recordType: event.type,
-        recordCreatedAt: event.createdAt,
-        userId,
-        companyId,
-        branchId,
-      });
-
-      results.push({
-        event,
-        evaluation,
-        incident,
-      });
-    }
-
-    return {
-      simulatedEvents: results,
-    };
-  }
-
-  async punch(params: {
-    userId: string;
-    companyId: string;
-    branchId: string;
-    type: RecordType;
-    createdBy: 'TABLET' | 'MOBILE';
-  }) {
-
-    const { userId, companyId, branchId, type } = params;
-
-    const membership = await this.getActiveMembership(
-      userId,
-      companyId,
-      branchId,
-    );
-
-    const lastRecord = await this.getLastRecord(membership.id);
-
-    if (type === RecordType.IN && lastRecord?.type === RecordType.IN) {
-      throw new BadRequestException('Already IN');
-    }
-
-    if (type === RecordType.OUT && (!lastRecord || lastRecord.type === RecordType.OUT)) {
-      throw new BadRequestException('No active IN');
-    }
-
-    /* ======================================================
-       🧪 DEBUG TIME (SOLO SI EXISTE VARIABLE ENV)
-    ====================================================== */
-
-    const now = process.env.DEBUG_PUNCH_TIME
-      ? new Date(process.env.DEBUG_PUNCH_TIME)
-      : new Date();
-
-    /* ====================================================== */
-
-    const evaluation = await this.evaluateSchedule({
-      userId,
-      branchId,
-      date: now,
-      type,
-    });
-
-    const record = await this.createRecord({
-      type,
-      userId,
-      companyId,
-      branchId,
-      membershipId: membership.id,
-    });
-
-    await this.handleIncidentFromEvaluation({
-      evaluation,
-      recordType: type,
-      recordId: record.id,
-      recordCreatedAt: record.createdAt,
-      userId,
-      membershipId: membership.id,
-      companyId,
-      branchId,
-    });
-
-    return record;
-  }
-
-  /* ======================================================
-     🧠 EVALUACIÓN DE HORARIO (NUEVA LÓGICA JERÁRQUICA)
+     🧠 EVALUACIÓN DE HORARIO
   ====================================================== */
 
   private async evaluateSchedule({
@@ -199,9 +47,7 @@ export class PunchService {
       include: { shifts: true },
     });
 
-    if (!schedule) {
-      return { status: 'NO_SHIFT' };
-    }
+    if (!schedule) return { status: 'NO_SHIFT' };
 
     const shiftsOfDay = schedule.shifts.filter(
       s => s.weekday === weekday,
@@ -224,17 +70,6 @@ export class PunchService {
     ============================ */
     if (type === RecordType.IN) {
 
-      const upcoming = enriched
-        .filter(s => nowMinutes <= s.startMinutes)
-        .sort((a, b) => a.startMinutes - b.startMinutes)[0];
-
-      if (upcoming) {
-        return this.evaluateDiff(
-          nowMinutes - upcoming.startMinutes,
-          upcoming.startTime,
-        );
-      }
-
       const active = enriched.find(
         s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes,
       );
@@ -246,14 +81,14 @@ export class PunchService {
         );
       }
 
-      const lastPast = enriched
-        .filter(s => nowMinutes > s.endMinutes)
-        .sort((a, b) => b.endMinutes - a.endMinutes)[0];
+      const upcoming = enriched
+        .filter(s => nowMinutes < s.startMinutes)
+        .sort((a, b) => a.startMinutes - b.startMinutes)[0];
 
-      if (lastPast) {
+      if (upcoming) {
         return this.evaluateDiff(
-          nowMinutes - lastPast.startMinutes,
-          lastPast.startTime,
+          nowMinutes - upcoming.startMinutes,
+          upcoming.startTime,
         );
       }
 
@@ -325,7 +160,7 @@ export class PunchService {
   }
 
   /* ======================================================
-     🎯 INCIDENCIAS
+     🎯 INCIDENCIAS (DB)
   ====================================================== */
 
   private async handleIncidentFromEvaluation({
@@ -360,7 +195,10 @@ export class PunchService {
     }
 
     if (evaluation.status === 'EARLY') {
-      type = IncidentType.IN_EARLY;
+      type =
+        recordType === RecordType.IN
+          ? IncidentType.IN_EARLY
+          : IncidentType.OUT_EARLY;
     }
 
     if (evaluation.status === 'LATE') {
@@ -385,17 +223,17 @@ export class PunchService {
         occurredAt: recordCreatedAt,
         expectedAt: evaluation.expectedTime
           ? this.buildExpectedDate(
-            recordCreatedAt,
-            evaluation.expectedTime,
-          )
+              recordCreatedAt,
+              evaluation.expectedTime,
+            )
           : null,
       },
     });
   }
 
   /* ======================================================
-   🎯 CONSTRUCCIÓN DE INCIDENCIA (SIN DB)
-====================================================== */
+     🎯 INCIDENCIAS (SIMULADOR)
+  ====================================================== */
 
   private buildIncidentFromEvaluation({
     evaluation,
@@ -425,7 +263,10 @@ export class PunchService {
     }
 
     if (evaluation.status === 'EARLY') {
-      type = IncidentType.IN_EARLY;
+      type =
+        recordType === RecordType.IN
+          ? IncidentType.IN_EARLY
+          : IncidentType.OUT_EARLY;
     }
 
     if (evaluation.status === 'LATE') {
@@ -445,13 +286,17 @@ export class PunchService {
       occurredAt: recordCreatedAt,
       expectedAt: evaluation.expectedTime
         ? this.buildExpectedDate(
-          recordCreatedAt,
-          evaluation.expectedTime,
-        )
+            recordCreatedAt,
+            evaluation.expectedTime,
+          )
         : null,
       diffMinutes: evaluation.diffMinutes ?? null,
     };
   }
+
+  /* ======================================================
+     HELPERS
+  ====================================================== */
 
   private buildExpectedDate(baseDate: Date, time: string) {
     const [h, m] = time.split(':').map(Number);
@@ -463,70 +308,5 @@ export class PunchService {
   private timeToMinutes(time: string) {
     const [h, m] = time.split(':').map(Number);
     return h * 60 + m;
-  }
-
-  private buildLocalDate(date: string, time: string) {
-    const [year, month, day] = date.split('-').map(Number);
-    const [h, m] = time.split(':').map(Number);
-
-    return new Date(year, month - 1, day, h, m, 0, 0);
-  }
-
-  /* ======================================================
-     HELPERS
-  ====================================================== */
-
-
-  private async getActiveMembership(
-    userId: string,
-    companyId: string,
-    branchId: string,
-  ) {
-
-    const membership = await this.prisma.membership.findFirst({
-      where: {
-        userId,
-        companyId,
-        branchId,
-        active: true,
-      },
-    });
-
-    if (!membership) {
-      throw new BadRequestException(
-        'Usuario no pertenece a esta sucursal',
-      );
-    }
-
-    return membership;
-  }
-
-  private async getLastRecord(membershipId: string) {
-
-    return this.prisma.record.findFirst({
-      where: { membershipId },
-      orderBy: { createdAt: 'desc' },
-    });
-  }
-
-  private async createRecord(data: {
-    type: RecordType;
-    userId: string;
-    companyId: string;
-    branchId: string;
-    membershipId: string;
-  }) {
-
-    return this.prisma.record.create({
-      data: {
-        type: data.type,
-        user: { connect: { id: data.userId } },
-        company: { connect: { id: data.companyId } },
-        branch: { connect: { id: data.branchId } },
-        membership: {
-          connect: { id: data.membershipId },
-        },
-      },
-    });
   }
 }
