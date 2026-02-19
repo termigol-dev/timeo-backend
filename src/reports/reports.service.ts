@@ -198,242 +198,210 @@ export class ReportsService {
      TU FUNCIÓN REAL DE CÁLCULO (NO SE TOCA)
   ========================================================= */
 
-  async getDailyReportForUser(
-    requestUser: {
-      id: string;
-      role: Role;
-      companyId: string;
-      branchId: string | null;
+ async getDailyReportForUser(
+  requestUser: {
+    id: string;
+    role: Role;
+    companyId: string;
+    branchId: string | null;
+  },
+  targetUserId: string,
+  from: string,
+  to: string,
+) {
+
+  const membership = await this.prisma.membership.findFirst({
+    where: {
+      userId: targetUserId,
+      companyId: requestUser.companyId,
+      ...(requestUser.role === Role.ADMIN_SUCURSAL
+        ? { branchId: requestUser.branchId }
+        : {}),
     },
-    targetUserId: string,
-    from: string,
-    to: string,
-  ) {
+  });
 
-    const membership = await this.prisma.membership.findFirst({
+  if (!membership) {
+    if (
+      requestUser.role === Role.EMPLEADO &&
+      requestUser.id === targetUserId
+    ) {
+    } else {
+      throw new ForbiddenException();
+    }
+  }
+
+  const fromDate = new Date(from);
+  const toDate = new Date(to);
+
+  /* ===============================
+     RECORDS
+  =============================== */
+
+  const records = await this.prisma.record.findMany({
+    where: {
+      userId: targetUserId,
+      createdAt: { gte: fromDate, lte: toDate },
+    },
+    orderBy: { createdAt: 'asc' },
+  });
+
+  /* ===============================
+     INCIDENTES
+  =============================== */
+
+  const incidents = await this.prisma.incident.findMany({
+    where: {
+      userId: targetUserId,
+      occurredAt: { gte: fromDate, lte: toDate },
+    },
+  });
+
+  const recordsByDay = new Map<string, any[]>();
+  const incidentsByDay = new Map<string, any[]>();
+
+  const toDayKey = (d: Date) => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const da = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${da}`;
+  };
+
+  for (const r of records) {
+    const d = toDayKey(r.createdAt);
+    if (!recordsByDay.has(d)) recordsByDay.set(d, []);
+    recordsByDay.get(d)!.push(r);
+  }
+
+  for (const i of incidents) {
+    const d = toDayKey(i.occurredAt);
+    if (!incidentsByDay.has(d)) incidentsByDay.set(d, []);
+    incidentsByDay.get(d)!.push(i);
+  }
+
+  /* ===============================
+     MERGE helper (igual calendario)
+  =============================== */
+
+  const mergeTurns = (turns: { startTime: string; endTime: string }[]) => {
+    if (!turns.length) return [];
+
+    const sorted = [...turns].sort((a, b) =>
+      a.startTime.localeCompare(b.startTime),
+    );
+
+    const merged = [{ ...sorted[0] }];
+
+    for (let i = 1; i < sorted.length; i++) {
+      const last = merged[merged.length - 1];
+      const cur = sorted[i];
+
+      if (cur.startTime <= last.endTime) {
+        if (cur.endTime > last.endTime) last.endTime = cur.endTime;
+      } else {
+        merged.push({ ...cur });
+      }
+    }
+
+    return merged;
+  };
+
+  /* ===============================
+     RECORRER DÍAS
+  =============================== */
+
+  const days: any[] = [];
+
+  const cursor = new Date(fromDate);
+  cursor.setHours(0, 0, 0, 0);
+
+  const end = new Date(toDate);
+  end.setHours(0, 0, 0, 0);
+
+  while (cursor <= end) {
+
+    const dayKey = toDayKey(cursor);
+    const jsDay = cursor.getDay();
+    const weekday = jsDay === 0 ? 7 : jsDay;
+    const dayStart = new Date(cursor);
+
+    const schedule = await this.prisma.schedule.findFirst({
       where: {
         userId: targetUserId,
-        companyId: requestUser.companyId,
-        ...(requestUser.role === Role.ADMIN_SUCURSAL
-          ? { branchId: requestUser.branchId }
-          : {}),
+        validFrom: { lte: dayStart },
+        OR: [
+          { validTo: null },
+          { validTo: { gte: dayStart } },
+        ],
       },
-    });
-
-    if (!membership) {
-
-      // SUPERADMIN puede ver todo
-      if (requestUser.role === Role.SUPERADMIN) {
-        // permitido
-      }
-
-      else if (
-        requestUser.role === Role.EMPLEADO &&
-        requestUser.id === targetUserId
-      ) {
-        // permitido
-      }
-
-      else {
-        throw new ForbiddenException();
-      }
-    }
-
-    const fromDate = new Date(from);
-    const toDate = new Date(to);
-
-    /* ---------------------------------------------
-       RECORDS
-    --------------------------------------------- */
-
-    const records = await this.prisma.record.findMany({
-      where: {
-        userId: targetUserId,
-        createdAt: {
-          gte: fromDate,
-          lte: toDate,
-        },
-      },
-      orderBy: { createdAt: 'asc' },
-    });
-
-    /* ---------------------------------------------
-       INCIDENTES
-    --------------------------------------------- */
-
-    const incidents = await this.prisma.incident.findMany({
-      where: {
-        userId: targetUserId,
-        occurredAt: {
-          gte: fromDate,
-          lte: toDate,
+      include: {
+        shifts: true,
+        exceptions: {
+          where: { date: dayStart },
+          include: { blocks: true },
         },
       },
     });
 
-    /* ---------------------------------------------
-       EXCEPCIONES
-    --------------------------------------------- */
+    let finalShifts: { startTime: string; endTime: string }[] = [];
 
-    const exceptions = await this.prisma.scheduleException.findMany({
-      where: {
-        schedule: {
-          userId: targetUserId,
-        },
-        date: {
-          gte: fromDate,
-          lte: toDate,
-        },
-      },
-    });
+    if (schedule) {
 
-    /* ---------------------------------------------
-       INDEXADO POR DÍA
-    --------------------------------------------- */
+      const exception = schedule.exceptions[0];
 
-    const recordsByDay = new Map<string, any[]>();
-    const incidentsByDay = new Map<string, any[]>();
-    const exceptionsByDay = new Map<string, any[]>();
+      if (exception) {
 
-    const toDayKey = (d: Date) => {
-      const y = d.getFullYear();
-      const m = String(d.getMonth() + 1).padStart(2, '0');
-      const da = String(d.getDate()).padStart(2, '0');
-      return `${y}-${m}-${da}`;
-    };
+        if (exception.type === 'VACATION') {
+          finalShifts = [];
+        }
 
-    for (const r of records) {
-      const d = toDayKey(r.createdAt);
-      if (!recordsByDay.has(d)) recordsByDay.set(d, []);
-      recordsByDay.get(d)!.push(r);
-    }
-
-    for (const i of incidents) {
-      const d = toDayKey(i.occurredAt);
-      if (!incidentsByDay.has(d)) incidentsByDay.set(d, []);
-      incidentsByDay.get(d)!.push(i);
-    }
-
-    for (const ex of exceptions) {
-      const d = toDayKey(ex.date);
-      if (!exceptionsByDay.has(d)) exceptionsByDay.set(d, []);
-      exceptionsByDay.get(d)!.push(ex);
-    }
-
-    /* ---------------------------------------------
-       RECORRER DÍAS
-    --------------------------------------------- */
-
-    const days: any[] = [];
-
-    const cursor = new Date(fromDate);
-    cursor.setHours(0, 0, 0, 0);
-
-    const end = new Date(toDate);
-    end.setHours(0, 0, 0, 0);
-
-    while (cursor <= end) {
-
-      const dayKey = toDayKey(cursor);
-
-      const jsDay = cursor.getDay();
-      const weekday = jsDay === 0 ? 7 : jsDay;
-
-      const dayStart = new Date(cursor);
-
-      /* ---------------------------------------------
-         OBTENER SCHEDULE VIGENTE ESE DÍA
-      --------------------------------------------- */
-
-      const schedule = await this.prisma.schedule.findFirst({
-        where: {
-          userId: targetUserId,
-          validFrom: { lte: dayStart },
-          OR: [
-            { validTo: null },
-            { validTo: { gte: dayStart } },
-          ],
-        },
-        include: { shifts: true },
-      });
-
-      let dayShifts: {
-        id: string;
-        startTime: string;
-        endTime: string;
-      }[] = schedule
-          ? schedule.shifts
-            .filter(s => {
-
-              const validFromOk = s.validFrom <= dayStart;
-              const validToOk =
-                !s.validTo || s.validTo >= dayStart;
-
-              return validFromOk && validToOk && s.weekday === weekday;
-            })
-            .map(s => ({
-              id: s.id,
-              startTime: s.startTime,
-              endTime: s.endTime,
-            }))
-          : [];
-      /* ---------------------------------------------
-         APLICAR EXCEPCIONES
-      --------------------------------------------- */
-
-      const dayExceptions = exceptionsByDay.get(dayKey) || [];
-
-      // 1️⃣ Día completo sin trabajo
-      if (dayExceptions.some(e =>
-        e.type === 'DAY_OFF' || e.type === 'VACATION'
-      )) {
-
-        dayShifts = [];
+        else if (exception.type === 'MODIFIED_SHIFT') {
+          finalShifts = exception.blocks.map(b => ({
+            startTime: b.startTime,
+            endTime: b.endTime,
+          }));
+        }
 
       } else {
 
-        const modified = dayExceptions.find(
-          e => e.type === 'MODIFIED_SHIFT'
-        );
+        const base = schedule.shifts.filter(s => {
 
-        if (modified) {
+          const from = new Date(s.validFrom);
+          from.setHours(0, 0, 0, 0);
 
-          // elimina turno base
-          dayShifts = [];
+          const to = s.validTo ? new Date(s.validTo) : null;
+          if (to) to.setHours(0, 0, 0, 0);
 
-          // si define nuevo horario → usarlo
-          if (modified.startTime && modified.endTime) {
-            dayShifts.push({
-              id: modified.id,
-              startTime: modified.startTime,
-              endTime: modified.endTime,
-            });
-          }
-        }
-      }
+          const inRange =
+            from.getTime() <= dayStart.getTime() &&
+            (!to || to.getTime() >= dayStart.getTime());
 
-      /* ---------------------------------------------
-         CONSTRUIR DÍA
-      --------------------------------------------- */
+          return inRange && s.weekday === weekday;
+        });
 
-      days.push({
-        date: dayKey,
-        shifts: dayShifts.map(s => ({
-          id: s.id,
+        finalShifts = base.map(s => ({
           startTime: s.startTime,
           endTime: s.endTime,
-        })),
-        records: (recordsByDay.get(dayKey) || []).map(r => ({
-          id: r.id,
-          type: r.type,
-          createdAt: r.createdAt,
-        })),
-        incidents: incidentsByDay.get(dayKey) || [],
-      });
-
-      cursor.setDate(cursor.getDate() + 1);
+        }));
+      }
     }
 
-    return { days };
+    finalShifts = mergeTurns(finalShifts);
+
+    days.push({
+      date: dayKey,
+      shifts: finalShifts,
+      records: (recordsByDay.get(dayKey) || []).map(r => ({
+        id: r.id,
+        type: r.type,
+        createdAt: r.createdAt,
+      })),
+      incidents: incidentsByDay.get(dayKey) || [],
+    });
+
+    cursor.setDate(cursor.getDate() + 1);
   }
+
+  return { days };
+}
+
 }

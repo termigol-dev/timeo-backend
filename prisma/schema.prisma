@@ -205,17 +205,27 @@ model ScheduleException {
   scheduleId String
 
   date       DateTime
-  startTime  String?  // null = no trabaja ese día
-  endTime    String?
-
   type       ScheduleExceptionType
 
   createdAt  DateTime @default(now())
 
   schedule   Schedule @relation(fields: [scheduleId], references: [id])
+  blocks     ScheduleExceptionBlock[]
 
   @@index([scheduleId])
   @@index([date])
+}
+
+model ScheduleExceptionBlock {
+  id           String   @id @default(uuid())
+  exceptionId  String
+
+  startTime    String
+  endTime      String
+
+  exception    ScheduleException @relation(fields: [exceptionId], references: [id])
+
+  @@index([exceptionId])
 }
 
 /// ======================

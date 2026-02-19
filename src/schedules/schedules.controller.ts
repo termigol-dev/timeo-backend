@@ -90,7 +90,7 @@ export class SchedulesController {
       shiftId?: string;
     },
   ) {
-    return this.schedulesService.deleteShifts(
+    return this.schedulesService.deleteShift(
       scheduleId,
       body,
     );
