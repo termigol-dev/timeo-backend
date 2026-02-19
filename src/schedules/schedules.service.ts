@@ -231,38 +231,38 @@ export class SchedulesService {
        AÑADIR VACACIONES (BORRADOR)
     ====================================================== */
   async addVacation(
-  requestUser: any,
-  scheduleId: string,
-  body: { date: string },
-) {
-  const schedule = await this.prisma.schedule.findUnique({
-    where: { id: scheduleId },
-  });
+    requestUser: any,
+    scheduleId: string,
+    body: { date: string },
+  ) {
+    const schedule = await this.prisma.schedule.findUnique({
+      where: { id: scheduleId },
+    });
 
-  if (!schedule) {
-    throw new NotFoundException('Horario no encontrado');
+    if (!schedule) {
+      throw new NotFoundException('Horario no encontrado');
+    }
+
+    const date = new Date(body.date);
+    date.setHours(0, 0, 0, 0);
+
+    // 🔁 Eliminar excepción previa si existe
+    await this.prisma.scheduleException.deleteMany({
+      where: {
+        scheduleId,
+        date,
+      },
+    });
+
+    // Crear VACATION (día completo vacío)
+    return this.prisma.scheduleException.create({
+      data: {
+        scheduleId,
+        date,
+        type: 'VACATION',
+      },
+    });
   }
-
-  const date = new Date(body.date);
-  date.setHours(0, 0, 0, 0);
-
-  // 🔁 Eliminar excepción previa si existe
-  await this.prisma.scheduleException.deleteMany({
-    where: {
-      scheduleId,
-      date,
-    },
-  });
-
-  // Crear VACATION (día completo vacío)
-  return this.prisma.scheduleException.create({
-    data: {
-      scheduleId,
-      date,
-      type: 'VACATION',
-    },
-  });
-}
 
 
   /* ======================================================
@@ -365,384 +365,393 @@ export class SchedulesService {
 ====================================================== */
   async getActiveSchedule(userId: string, weekStartStr?: string) {
 
-  /* ==================================================
-     🔑 helper local — fusionar bloques contiguos
-  ================================================== */
-  const mergeTurns = (turns: {
-    startTime: string;
-    endTime: string;
-    source: string;
-  }[]) => {
+    /* ==================================================
+       🔑 helper local — fusionar bloques contiguos
+    ================================================== */
+    const mergeTurns = (turns: {
+      startTime: string;
+      endTime: string;
+      source: string;
+    }[]) => {
 
-    if (!turns.length) return [];
+      if (!turns.length) return [];
 
-    const sorted = [...turns].sort(
-      (a, b) => a.startTime.localeCompare(b.startTime)
-    );
+      const sorted = [...turns].sort(
+        (a, b) => a.startTime.localeCompare(b.startTime)
+      );
 
-    const merged = [{ ...sorted[0] }];
+      const merged = [{ ...sorted[0] }];
 
-    for (let i = 1; i < sorted.length; i++) {
+      for (let i = 1; i < sorted.length; i++) {
 
-      const last = merged[merged.length - 1];
-      const cur = sorted[i];
+        const last = merged[merged.length - 1];
+        const cur = sorted[i];
 
-      if (cur.startTime <= last.endTime) {
-        if (cur.endTime > last.endTime) {
-          last.endTime = cur.endTime;
+        if (cur.startTime <= last.endTime) {
+          if (cur.endTime > last.endTime) {
+            last.endTime = cur.endTime;
+          }
+        } else {
+          merged.push({ ...cur });
         }
-      } else {
-        merged.push({ ...cur });
       }
+
+      return merged;
+    };
+
+    /* ==================================================
+       1️⃣ CALCULAR WEEKSTART (SIEMPRE LUNES LOCAL)
+    ================================================== */
+    let weekStart: Date;
+
+    if (weekStartStr) {
+      const d = new Date(weekStartStr);
+      d.setHours(0, 0, 0, 0);
+
+      const jsDay = d.getDay();
+      const offset = jsDay === 0 ? -6 : 1 - jsDay;
+
+      d.setDate(d.getDate() + offset);
+      weekStart = d;
+    } else {
+      const d = new Date();
+      d.setHours(0, 0, 0, 0);
+
+      const jsDay = d.getDay();
+      const offset = jsDay === 0 ? -6 : 1 - jsDay;
+
+      d.setDate(d.getDate() + offset);
+      weekStart = d;
     }
 
-    return merged;
-  };
+    const weekEnd = new Date(weekStart);
+    weekEnd.setDate(weekStart.getDate() + 6);
+    weekEnd.setHours(23, 59, 59, 999);
 
-  /* ==================================================
-     1️⃣ CALCULAR WEEKSTART (SIEMPRE LUNES LOCAL)
-  ================================================== */
-  let weekStart: Date;
-
-  if (weekStartStr) {
-    const d = new Date(weekStartStr);
-    d.setHours(0, 0, 0, 0);
-
-    const jsDay = d.getDay();
-    const offset = jsDay === 0 ? -6 : 1 - jsDay;
-
-    d.setDate(d.getDate() + offset);
-    weekStart = d;
-  } else {
-    const d = new Date();
-    d.setHours(0, 0, 0, 0);
-
-    const jsDay = d.getDay();
-    const offset = jsDay === 0 ? -6 : 1 - jsDay;
-
-    d.setDate(d.getDate() + offset);
-    weekStart = d;
-  }
-
-  const weekEnd = new Date(weekStart);
-  weekEnd.setDate(weekStart.getDate() + 6);
-  weekEnd.setHours(23, 59, 59, 999);
-
-  /* ==================================================
-     2️⃣ OBTENER SCHEDULE ACTIVO
-  ================================================== */
-  const schedule = await this.prisma.schedule.findFirst({
-    where: {
-      userId,
-      validFrom: { lte: weekEnd },
-      OR: [
-        { validTo: null },
-        { validTo: { gte: weekStart } },
-      ],
-    },
-    orderBy: {
-      validFrom: 'desc',
-    },
-    include: {
-      shifts: true,
-      exceptions: {
-        include: {
-          blocks: true,
+    /* ==================================================
+       2️⃣ OBTENER SCHEDULE ACTIVO
+    ================================================== */
+    const schedule = await this.prisma.schedule.findFirst({
+      where: {
+        userId,
+        validFrom: { lte: weekEnd },
+        OR: [
+          { validTo: null },
+          { validTo: { gte: weekStart } },
+        ],
+      },
+      orderBy: {
+        validFrom: 'desc',
+      },
+      include: {
+        shifts: true,
+        exceptions: {
+          include: {
+            blocks: true,
+          },
         },
       },
-    },
-  });
+    });
 
-  if (!schedule) {
+    if (!schedule) {
+      return {
+        scheduleId: null,
+        weekStart: this.formatDateLocal(weekStart),
+        days: [],
+      };
+    }
+
+    const days = [];
+
+    /* ==================================================
+       3️⃣ RECORRER LUNES → DOMINGO
+    ================================================== */
+    for (let i = 0; i < 7; i++) {
+
+      const date = new Date(weekStart);
+      date.setDate(weekStart.getDate() + i);
+      date.setHours(0, 0, 0, 0);
+
+      const dateStr = this.formatDateLocal(date);
+
+      const jsDay = date.getDay();
+      const weekday = jsDay === 0 ? 7 : jsDay;
+
+      /* ----------------------------------------------
+         4️⃣ SHIFTS BASE VIGENTES ESE DÍA
+      ---------------------------------------------- */
+      const activeShifts = schedule.shifts.filter(shift => {
+
+        const from = new Date(shift.validFrom);
+        from.setHours(0, 0, 0, 0);
+
+        const to = shift.validTo ? new Date(shift.validTo) : null;
+        if (to) to.setHours(0, 0, 0, 0);
+
+        const inRange =
+          from.getTime() <= date.getTime() &&
+          (!to || to.getTime() >= date.getTime());
+
+        return inRange && shift.weekday === weekday;
+      });
+
+      let finalTurns = activeShifts.map(s => ({
+        startTime: s.startTime,
+        endTime: s.endTime,
+        source: 'regular',
+      }));
+
+      /* ----------------------------------------------
+         5️⃣ EXCEPCIÓN DEL DÍA
+      ---------------------------------------------- */
+      const exception = schedule.exceptions.find(ex => {
+        const exDateStr = this.formatDateLocal(new Date(ex.date));
+        return exDateStr === dateStr;
+      });
+
+      let isVacation = false;
+
+      if (exception) {
+
+        // VACATION → día vacío total
+        if (exception.type === 'VACATION') {
+          isVacation = true;
+          finalTurns = [];
+        }
+
+        // MODIFIED_SHIFT → redefinir completamente el día
+        else if (exception.type === 'MODIFIED_SHIFT') {
+
+          const blocks = exception.blocks ?? [];
+
+          // Si no hay bloques → día vacío (turno eliminado)
+          if (blocks.length === 0) {
+            finalTurns = [];
+          } else {
+            finalTurns = blocks.map(b => ({
+              startTime: b.startTime,
+              endTime: b.endTime,
+              source: 'modified',
+            }));
+          }
+        }
+      }
+
+      /* ----------------------------------------------
+         6️⃣ FUSIONAR BLOQUES
+      ---------------------------------------------- */
+      finalTurns = mergeTurns(finalTurns);
+
+      days.push({
+        date: dateStr,
+        weekday,
+        turns: finalTurns,
+        isVacation,
+      });
+    }
+
     return {
-      scheduleId: null,
+      scheduleId: schedule.id,
       weekStart: this.formatDateLocal(weekStart),
-      days: [],
+      days,
     };
   }
 
-  const days = [];
+  async addExceptions(
+    scheduleId: string,
+    exceptions: {
+      type: 'EXTRA_SHIFT' | 'MODIFIED_SHIFT' | 'DAY_OFF' | 'VACATION';
+      date: string;
+      startTime?: string;
+      endTime?: string;
+      mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+    }[],
+  ) {
 
-  /* ==================================================
-     3️⃣ RECORRER LUNES → DOMINGO
-  ================================================== */
-  for (let i = 0; i < 7; i++) {
+    const toMinutes = (t: string) => {
+      const [h, m] = t.split(':').map(Number);
+      return h * 60 + m;
+    };
 
-    const date = new Date(weekStart);
-    date.setDate(weekStart.getDate() + i);
-    date.setHours(0, 0, 0, 0);
+    for (const ex of exceptions) {
 
-    const dateStr = this.formatDateLocal(date);
+      const exDate = new Date(ex.date);
+      exDate.setHours(0, 0, 0, 0);
 
-    const jsDay = date.getDay();
-    const weekday = jsDay === 0 ? 7 : jsDay;
+      const jsDay = exDate.getDay();
+      const weekday = jsDay === 0 ? 7 : jsDay;
 
-    /* ----------------------------------------------
-       4️⃣ SHIFTS BASE VIGENTES ESE DÍA
-    ---------------------------------------------- */
-    const activeShifts = schedule.shifts.filter(shift => {
+      /* =====================================================
+         🟠 ONLY_THIS_BLOCK
+      ===================================================== */
 
-      const from = new Date(shift.validFrom);
-      from.setHours(0, 0, 0, 0);
+      if (!ex.mode || ex.mode === 'ONLY_THIS_BLOCK') {
 
-      const to = shift.validTo ? new Date(shift.validTo) : null;
-      if (to) to.setHours(0, 0, 0, 0);
+        /* ---------------------------
+           VACATION / DAY_OFF
+        --------------------------- */
+        if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
 
-      const inRange =
-        from.getTime() <= date.getTime() &&
-        (!to || to.getTime() >= date.getTime());
-
-      return inRange && shift.weekday === weekday;
-    });
-
-    let finalTurns = activeShifts.map(s => ({
-      startTime: s.startTime,
-      endTime: s.endTime,
-      source: 'regular',
-    }));
-
-    /* ----------------------------------------------
-       5️⃣ EXCEPCIÓN DEL DÍA
-    ---------------------------------------------- */
-    const exception = schedule.exceptions.find(ex => {
-      const exDateStr = this.formatDateLocal(new Date(ex.date));
-      return exDateStr === dateStr;
-    });
-
-    let isVacation = false;
-
-    if (exception) {
-
-      // VACATION → día vacío total
-      if (exception.type === 'VACATION') {
-        isVacation = true;
-        finalTurns = [];
-      }
-
-      // MODIFIED_SHIFT → redefinir completamente el día
-      else if (exception.type === 'MODIFIED_SHIFT') {
-
-        finalTurns = exception.blocks.map(b => ({
-          startTime: b.startTime,
-          endTime: b.endTime,
-          source: 'modified',
-        }));
-      }
-    }
-
-    /* ----------------------------------------------
-       6️⃣ FUSIONAR BLOQUES
-    ---------------------------------------------- */
-    finalTurns = mergeTurns(finalTurns);
-
-    days.push({
-      date: dateStr,
-      weekday,
-      turns: finalTurns,
-      isVacation,
-    });
-  }
-
-  return {
-    scheduleId: schedule.id,
-    weekStart: this.formatDateLocal(weekStart),
-    days,
-  };
-}
-
-async addExceptions(
-  scheduleId: string,
-  exceptions: {
-    type: 'EXTRA_SHIFT' | 'MODIFIED_SHIFT' | 'DAY_OFF' | 'VACATION';
-    date: string;
-    startTime?: string;
-    endTime?: string;
-    mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
-  }[],
-) {
-
-  const toMinutes = (t: string) => {
-    const [h, m] = t.split(':').map(Number);
-    return h * 60 + m;
-  };
-
-  for (const ex of exceptions) {
-
-    const exDate = new Date(ex.date);
-    exDate.setHours(0, 0, 0, 0);
-
-    const jsDay = exDate.getDay();
-    const weekday = jsDay === 0 ? 7 : jsDay;
-
-    /* =====================================================
-       🟠 ONLY_THIS_BLOCK
-    ===================================================== */
-
-    if (!ex.mode || ex.mode === 'ONLY_THIS_BLOCK') {
-
-      /* ---------------------------
-         VACATION / DAY_OFF
-      --------------------------- */
-      if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
-
-        await this.prisma.scheduleException.deleteMany({
-          where: { scheduleId, date: exDate },
-        });
-
-        await this.prisma.scheduleException.create({
-          data: {
-            scheduleId,
-            type: ex.type,
-            date: exDate,
-          },
-        });
-
-        continue;
-      }
-
-      /* ---------------------------
-         EXTRA_SHIFT (por ahora neutro)
-      --------------------------- */
-      if (ex.type === 'EXTRA_SHIFT') {
-        // Aceptado pero no implementado todavía
-        continue;
-      }
-
-      /* ---------------------------
-         MODIFIED_SHIFT
-      --------------------------- */
-      if (ex.type === 'MODIFIED_SHIFT') {
-
-        const candidateShifts = await this.prisma.shift.findMany({
-          where: {
-            scheduleId,
-            weekday,
-            validFrom: { lte: exDate },
-            OR: [
-              { validTo: null },
-              { validTo: { gte: exDate } },
-            ],
-          },
-        });
-
-        if (candidateShifts.length === 0) continue;
-
-        let remainingBlocks: { startTime: string; endTime: string }[] = [];
-
-        if (ex.startTime && ex.endTime) {
-
-          const exStart = toMinutes(ex.startTime);
-          const exEnd = toMinutes(ex.endTime);
-
-          remainingBlocks = candidateShifts
-            .filter(s => {
-              const sStart = toMinutes(s.startTime);
-              const sEnd = toMinutes(s.endTime);
-              return !(sStart < exEnd && sEnd > exStart);
-            })
-            .map(s => ({
-              startTime: s.startTime,
-              endTime: s.endTime,
-            }));
-
-        } else {
-          remainingBlocks = [];
-        }
-
-        await this.prisma.scheduleException.deleteMany({
-          where: { scheduleId, date: exDate },
-        });
-
-        const exception = await this.prisma.scheduleException.create({
-          data: {
-            scheduleId,
-            type: 'MODIFIED_SHIFT',
-            date: exDate,
-          },
-        });
-
-        if (remainingBlocks.length > 0) {
-          await this.prisma.scheduleExceptionBlock.createMany({
-            data: remainingBlocks.map(b => ({
-              exceptionId: exception.id,
-              startTime: b.startTime,
-              endTime: b.endTime,
-            })),
+          await this.prisma.scheduleException.deleteMany({
+            where: { scheduleId, date: exDate },
           });
+
+          await this.prisma.scheduleException.create({
+            data: {
+              scheduleId,
+              type: ex.type,
+              date: exDate,
+            },
+          });
+
+          continue;
         }
-      }
 
-      continue;
-    }
+        /* ---------------------------
+           EXTRA_SHIFT (por ahora neutro)
+        --------------------------- */
+        if (ex.type === 'EXTRA_SHIFT') {
+          // Aceptado pero no implementado todavía
+          continue;
+        }
 
-    /* =====================================================
-       🔵 FROM_THIS_DAY_ON
-    ===================================================== */
+        /* ---------------------------
+           MODIFIED_SHIFT
+        --------------------------- */
+        if (ex.type === 'MODIFIED_SHIFT') {
 
-    if (ex.mode === 'FROM_THIS_DAY_ON') {
+          const candidateShifts = await this.prisma.shift.findMany({
+            where: {
+              scheduleId,
+              weekday,
+              validFrom: { lte: exDate },
+              OR: [
+                { validTo: null },
+                { validTo: { gte: exDate } },
+              ],
+            },
+          });
 
-      /* VACATION / DAY_OFF → solo marcar día */
-      if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
+          if (candidateShifts.length === 0) continue;
 
-        await this.prisma.scheduleException.create({
-          data: {
-            scheduleId,
-            type: ex.type,
-            date: exDate,
-          },
-        });
+          let remainingBlocks: { startTime: string; endTime: string }[] = [];
 
-        continue;
-      }
+          if (ex.startTime && ex.endTime) {
 
-      /* EXTRA_SHIFT → neutro */
-      if (ex.type === 'EXTRA_SHIFT') {
-        continue;
-      }
+            const exStart = toMinutes(ex.startTime);
+            const exEnd = toMinutes(ex.endTime);
 
-      /* MODIFIED_SHIFT → cierre estructural */
-      if (ex.type === 'MODIFIED_SHIFT') {
-
-        const candidateShifts = await this.prisma.shift.findMany({
-          where: {
-            scheduleId,
-            weekday,
-            validFrom: { lte: exDate },
-            OR: [
-              { validTo: null },
-              { validTo: { gte: exDate } },
-            ],
-          },
-        });
-
-        if (candidateShifts.length === 0) continue;
-
-        for (const shift of candidateShifts) {
-
-          if (shift.validFrom > exDate) {
-
-            await this.prisma.shift.delete({
-              where: { id: shift.id },
-            });
+            remainingBlocks = candidateShifts
+              .filter(s => {
+                const sStart = toMinutes(s.startTime);
+                const sEnd = toMinutes(s.endTime);
+                return !(sStart < exEnd && sEnd > exStart);
+              })
+              .map(s => ({
+                startTime: s.startTime,
+                endTime: s.endTime,
+              }));
 
           } else {
+            remainingBlocks = [];
+          }
 
-            const previousDay = new Date(exDate);
-            previousDay.setDate(previousDay.getDate() - 1);
-            previousDay.setHours(23, 59, 59, 999);
+          await this.prisma.scheduleException.deleteMany({
+            where: { scheduleId, date: exDate },
+          });
 
-            await this.prisma.shift.update({
-              where: { id: shift.id },
-              data: { validTo: previousDay },
+          const exception = await this.prisma.scheduleException.create({
+            data: {
+              scheduleId,
+              type: 'MODIFIED_SHIFT',
+              date: exDate,
+            },
+          });
+
+          if (remainingBlocks.length > 0) {
+            await this.prisma.scheduleExceptionBlock.createMany({
+              data: remainingBlocks.map(b => ({
+                exceptionId: exception.id,
+                startTime: b.startTime,
+                endTime: b.endTime,
+              })),
             });
+          }
+        }
+
+        continue;
+      }
+
+      /* =====================================================
+         🔵 FROM_THIS_DAY_ON
+      ===================================================== */
+
+      if (ex.mode === 'FROM_THIS_DAY_ON') {
+
+        /* VACATION / DAY_OFF → solo marcar día */
+        if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
+
+          await this.prisma.scheduleException.create({
+            data: {
+              scheduleId,
+              type: ex.type,
+              date: exDate,
+            },
+          });
+
+          continue;
+        }
+
+        /* EXTRA_SHIFT → neutro */
+        if (ex.type === 'EXTRA_SHIFT') {
+          continue;
+        }
+
+        /* MODIFIED_SHIFT → cierre estructural */
+        if (ex.type === 'MODIFIED_SHIFT') {
+
+          const candidateShifts = await this.prisma.shift.findMany({
+            where: {
+              scheduleId,
+              weekday,
+              validFrom: { lte: exDate },
+              OR: [
+                { validTo: null },
+                { validTo: { gte: exDate } },
+              ],
+            },
+          });
+
+          if (candidateShifts.length === 0) continue;
+
+          for (const shift of candidateShifts) {
+
+            if (shift.validFrom > exDate) {
+
+              await this.prisma.shift.delete({
+                where: { id: shift.id },
+              });
+
+            } else {
+
+              const previousDay = new Date(exDate);
+              previousDay.setDate(previousDay.getDate() - 1);
+              previousDay.setHours(23, 59, 59, 999);
+
+              await this.prisma.shift.update({
+                where: { id: shift.id },
+                data: { validTo: previousDay },
+              });
+            }
           }
         }
       }
     }
+
+    return { ok: true };
   }
 
-  return { ok: true };
-}
+
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
      ¿Tenía que trabajar este usuario en esta fecha?
@@ -801,9 +810,9 @@ async addExceptions(
   /* ======================================================
      ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
   ====================================================== */
- /* ======================================================
-     ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
-  ====================================================== */
+  /* ======================================================
+      ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
+   ====================================================== */
   async deleteShift(
     scheduleId: string,
     body: {
@@ -839,39 +848,39 @@ async addExceptions(
     // ======================================================
     if (mode === 'ONLY_THIS_BLOCK') {
 
-  // 1️⃣ Eliminar excepción previa del día
-  await this.prisma.scheduleException.deleteMany({
-    where: {
-      scheduleId,
-      date: baseDate,
-    },
-  });
+      // 1️⃣ Eliminar excepción previa del día
+      await this.prisma.scheduleException.deleteMany({
+        where: {
+          scheduleId,
+          date: baseDate,
+        },
+      });
 
-  // 2️⃣ Crear excepción MODIFIED_SHIFT
-  const exception = await this.prisma.scheduleException.create({
-    data: {
-      scheduleId,
-      date: baseDate,
-      type: 'MODIFIED_SHIFT',
-    },
-  });
+      // 2️⃣ Crear excepción MODIFIED_SHIFT
+      const exception = await this.prisma.scheduleException.create({
+        data: {
+          scheduleId,
+          date: baseDate,
+          type: 'MODIFIED_SHIFT',
+        },
+      });
 
-  // 3️⃣ Crear bloque que REPRESENTA LO QUE QUEDA
-  // OJO: deleteShift recibe el bloque que se quiere eliminar,
-  // pero el modelo nuevo guarda los bloques que SÍ se trabajan.
-  // Como aquí estamos usando la versión antigua,
-  // lo mantenemos como bloque único (recortado luego en getActiveSchedule)
+      // 3️⃣ Crear bloque que REPRESENTA LO QUE QUEDA
+      // OJO: deleteShift recibe el bloque que se quiere eliminar,
+      // pero el modelo nuevo guarda los bloques que SÍ se trabajan.
+      // Como aquí estamos usando la versión antigua,
+      // lo mantenemos como bloque único (recortado luego en getActiveSchedule)
 
-  await this.prisma.scheduleExceptionBlock.create({
-    data: {
-      exceptionId: exception.id,
-      startTime,
-      endTime,
-    },
-  });
+      await this.prisma.scheduleExceptionBlock.create({
+        data: {
+          exceptionId: exception.id,
+          startTime,
+          endTime,
+        },
+      });
 
-  return { created: true };
-}
+      return { created: true };
+    }
 
     // ======================================================
     // FROM_THIS_DAY_ON  → estructural por rango
