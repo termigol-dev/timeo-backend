@@ -79,11 +79,11 @@ export class SchedulesService {
   async addShiftToSchedule(
     scheduleId: string,
     data: {
-      weekday: number;      // 1 = lunes ... 7 = domingo
+      weekday: number;
       startTime: string;
       endTime: string;
-      validFrom: string;   // YYYY-MM-DD (LOCAL)
-      validTo?: string;    // YYYY-MM-DD | null (LOCAL)
+      validFrom: string;
+      validTo?: string;
     },
   ) {
     try {
@@ -94,9 +94,6 @@ export class SchedulesService {
 
       const { weekday, startTime, endTime, validFrom, validTo } = data;
 
-      // ==================================================
-      // 🛡️ BLINDAJE TOTAL DE weekday
-      // ==================================================
       if (
         weekday === null ||
         weekday === undefined ||
@@ -111,9 +108,6 @@ export class SchedulesService {
         );
       }
 
-      // ==================================================
-      // VALIDACIONES BÁSICAS
-      // ==================================================
       if (!startTime || !endTime) {
         throw new BadRequestException('Horas inválidas');
       }
@@ -128,16 +122,11 @@ export class SchedulesService {
         throw new BadRequestException('validFrom es obligatorio');
       }
 
-      // ==================================================
-      // 🔑 PARSEO DE FECHA LOCAL REAL (SIN UTC)
-      // ==================================================
       const parseLocalDate = (str: string): Date => {
         const [y, m, d] = str.split('-').map(Number);
-
         if (!y || !m || !d) {
           throw new BadRequestException(`Fecha inválida: ${str}`);
         }
-
         const date = new Date(y, m - 1, d);
         date.setHours(0, 0, 0, 0);
         return date;
@@ -152,9 +141,6 @@ export class SchedulesService {
         );
       }
 
-      // ==================================================
-      // 🔒 REGLA DE ORO: NO TOCAR EL PASADO (LOCAL)
-      // ==================================================
       const today = new Date();
       today.setHours(0, 0, 0, 0);
 
@@ -165,36 +151,56 @@ export class SchedulesService {
       }
 
       // ==================================================
-      // BUSCAR TURNOS QUE SOLAPEN EN FECHAS (MISMO weekday)
+      // 🧠 TIMEO SNAPSHOT RULE
       // ==================================================
-      const existingShifts = await this.prisma.shift.findMany({
+      const exception = await this.prisma.scheduleException.findFirst({
         where: {
           scheduleId,
-          weekday,
-
-          // solape de rangos de fechas
-          AND: [
-            {
-              OR: [
-                { validTo: null },
-                { validTo: { gte: fromDate } },
-              ],
-            },
-            {
-              validFrom: {
-                lte: toDate ?? new Date('9999-12-31'),
-              },
-            },
-          ],
+          date: fromDate,
+          type: 'MODIFIED_SHIFT',
         },
+        include: { blocks: true },
       });
+
+      let itemsToCheck: { startTime: string; endTime: string }[];
+
+      if (exception) {
+        console.log('🧠 SNAPSHOT MODE — validar contra excepción');
+
+        itemsToCheck = exception.blocks.map(b => ({
+          startTime: b.startTime,
+          endTime: b.endTime,
+        }));
+      } else {
+        const existingShifts = await this.prisma.shift.findMany({
+          where: {
+            scheduleId,
+            weekday,
+            AND: [
+              {
+                OR: [
+                  { validTo: null },
+                  { validTo: { gte: fromDate } },
+                ],
+              },
+              {
+                validFrom: {
+                  lte: toDate ?? new Date('9999-12-31'),
+                },
+              },
+            ],
+          },
+        });
+
+        itemsToCheck = existingShifts;
+      }
 
       // ==================================================
       // COMPROBAR SOLAPE HORARIO
       // ==================================================
-      const hasOverlap = existingShifts.some(shift =>
-        startTime < shift.endTime &&
-        endTime > shift.startTime,
+      const hasOverlap = itemsToCheck.some(item =>
+        startTime < item.endTime &&
+        endTime > item.startTime,
       );
 
       if (hasOverlap) {
@@ -204,12 +210,12 @@ export class SchedulesService {
       }
 
       // ==================================================
-      // CREAR TURNO NUEVO (INMUTABILIDAD DEL PASADO)
+      // CREAR TURNO
       // ==================================================
       const created = await this.prisma.shift.create({
         data: {
           scheduleId,
-          weekday,     // 1..7
+          weekday,
           startTime,
           endTime,
           validFrom: fromDate,
