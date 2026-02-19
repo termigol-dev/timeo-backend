@@ -568,7 +568,7 @@ export class SchedulesService {
       date: string;
       startTime?: string;
       endTime?: string;
-      blocks?: { startTime: string; endTime: string }[]; // 👈 IMPORTANTE
+      blocks?: { startTime: string; endTime: string }[];
       mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
     }[],
   ) {
@@ -591,26 +591,25 @@ export class SchedulesService {
 
       if (!ex.mode || ex.mode === 'ONLY_THIS_BLOCK') {
 
-        if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
+        // ⭐ helper → reescritura segura
+        const existing = await this.prisma.scheduleException.findMany({
+          where: { scheduleId, date: exDate },
+          select: { id: true },
+        });
 
-          // 🔴 borrar blocks primero (FK)
-          const existing = await this.prisma.scheduleException.findMany({
-            where: { scheduleId, date: exDate },
-            select: { id: true },
+        if (existing.length > 0) {
+          await this.prisma.scheduleExceptionBlock.deleteMany({
+            where: {
+              exceptionId: { in: existing.map(e => e.id) },
+            },
           });
 
-          if (existing.length > 0) {
+          await this.prisma.scheduleException.deleteMany({
+            where: { id: { in: existing.map(e => e.id) } },
+          });
+        }
 
-            await this.prisma.scheduleExceptionBlock.deleteMany({
-              where: {
-                exceptionId: { in: existing.map(e => e.id) },
-              },
-            });
-
-            await this.prisma.scheduleException.deleteMany({
-              where: { id: { in: existing.map(e => e.id) } },
-            });
-          }
+        if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
 
           await this.prisma.scheduleException.create({
             data: {
@@ -623,12 +622,10 @@ export class SchedulesService {
           continue;
         }
 
-        if (ex.type === 'EXTRA_SHIFT') {
-          continue;
-        }
+        if (ex.type === 'EXTRA_SHIFT') continue;
 
         /* ---------------------------
-           ✅ MODIFIED_SHIFT (NUEVO MODELO)
+           ✅ MODIFIED_SHIFT
         --------------------------- */
         if (ex.type === 'MODIFIED_SHIFT') {
 
@@ -646,14 +643,9 @@ export class SchedulesService {
 
           console.log('🧪 CANDIDATE SHIFTS', candidateShifts);
 
-          // 🔑 CLAVE: usar blocks del frontend
           const remainingBlocks = ex.blocks ?? [];
 
           console.log('🧪 REMAINING BLOCKS (FROM FRONT)', remainingBlocks);
-
-          await this.prisma.scheduleException.deleteMany({
-            where: { scheduleId, date: exDate },
-          });
 
           const exception = await this.prisma.scheduleException.create({
             data: {
