@@ -560,218 +560,171 @@ export class SchedulesService {
   }
 
   async addExceptions(
-    scheduleId: string,
-    exceptions: {
-      type: 'EXTRA_SHIFT' | 'MODIFIED_SHIFT' | 'DAY_OFF' | 'VACATION';
-      date: string;
-      startTime?: string;
-      endTime?: string;
-      mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
-    }[],
-  ) {
+  scheduleId: string,
+  exceptions: {
+    type: 'EXTRA_SHIFT' | 'MODIFIED_SHIFT' | 'DAY_OFF' | 'VACATION';
+    date: string;
+    startTime?: string;
+    endTime?: string;
+    blocks?: { startTime: string; endTime: string }[]; // 👈 IMPORTANTE
+    mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+  }[],
+) {
 
-    const toMinutes = (t: string) => {
-      const [h, m] = t.split(':').map(Number);
-      return h * 60 + m;
-    };
+  for (const ex of exceptions) {
 
-    for (const ex of exceptions) {
+    console.log('🧪 EXCEPTION INPUT', ex);
 
-      console.log('🧪 EXCEPTION INPUT', ex);
+    const exDate = new Date(ex.date);
+    exDate.setHours(0, 0, 0, 0);
 
-      const exDate = new Date(ex.date);
-      exDate.setHours(0, 0, 0, 0);
+    const jsDay = exDate.getDay();
+    const weekday = jsDay === 0 ? 7 : jsDay;
 
-      const jsDay = exDate.getDay();
-      const weekday = jsDay === 0 ? 7 : jsDay;
+    console.log('🧪 EX DATE + WEEKDAY', { exDate, weekday });
 
-      console.log('🧪 EX DATE + WEEKDAY', {
-        exDate,
-        weekday,
-      });
+    /* =====================================================
+       🟠 ONLY_THIS_BLOCK
+    ===================================================== */
 
-      /* =====================================================
-         🟠 ONLY_THIS_BLOCK
-      ===================================================== */
+    if (!ex.mode || ex.mode === 'ONLY_THIS_BLOCK') {
 
-      if (!ex.mode || ex.mode === 'ONLY_THIS_BLOCK') {
+      if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
 
-        if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
+        await this.prisma.scheduleException.deleteMany({
+          where: { scheduleId, date: exDate },
+        });
 
-          await this.prisma.scheduleException.deleteMany({
-            where: { scheduleId, date: exDate },
-          });
-
-          await this.prisma.scheduleException.create({
-            data: {
-              scheduleId,
-              type: ex.type,
-              date: exDate,
-            },
-          });
-
-          continue;
-        }
-
-        if (ex.type === 'EXTRA_SHIFT') {
-          continue;
-        }
-
-        /* ---------------------------
-           MODIFIED_SHIFT
-        --------------------------- */
-        if (ex.type === 'MODIFIED_SHIFT') {
-
-          const candidateShifts = await this.prisma.shift.findMany({
-            where: {
-              scheduleId,
-              weekday,
-              validFrom: { lte: exDate },
-              OR: [
-                { validTo: null },
-                { validTo: { gte: exDate } },
-              ],
-            },
-          });
-
-          console.log('🧪 CANDIDATE SHIFTS', candidateShifts);
-
-          if (candidateShifts.length === 0) continue;
-
-          let remainingBlocks: { startTime: string; endTime: string }[] = [];
-
-          if (ex.startTime && ex.endTime) {
-
-            const exStart = toMinutes(ex.startTime);
-            const exEnd = toMinutes(ex.endTime);
-
-            console.log('🧪 EX RANGE', { exStart, exEnd });
-
-            remainingBlocks = candidateShifts
-              .filter(s => {
-                const sStart = toMinutes(s.startTime);
-                const sEnd = toMinutes(s.endTime);
-
-                const overlaps = sStart < exEnd && sEnd > exStart;
-
-                console.log('🧪 CHECK SHIFT', {
-                  shift: s,
-                  sStart,
-                  sEnd,
-                  overlaps,
-                });
-
-                return !overlaps;
-              })
-              .map(s => ({
-                startTime: s.startTime,
-                endTime: s.endTime,
-              }));
-
-          } else {
-            remainingBlocks = [];
-          }
-
-          console.log('🧪 REMAINING BLOCKS', remainingBlocks);
-
-          await this.prisma.scheduleException.deleteMany({
-            where: { scheduleId, date: exDate },
-          });
-
-          const exception = await this.prisma.scheduleException.create({
-            data: {
-              scheduleId,
-              type: 'MODIFIED_SHIFT',
-              date: exDate,
-            },
-          });
-
-          console.log('🧪 FINAL DECISION', {
-            date: ex.date,
-            remainingBlocks,
-          });
-
-          if (remainingBlocks.length > 0) {
-            await this.prisma.scheduleExceptionBlock.createMany({
-              data: remainingBlocks.map(b => ({
-                exceptionId: exception.id,
-                startTime: b.startTime,
-                endTime: b.endTime,
-              })),
-            });
-          }
-        }
+        await this.prisma.scheduleException.create({
+          data: {
+            scheduleId,
+            type: ex.type,
+            date: exDate,
+          },
+        });
 
         continue;
       }
 
-      /* =====================================================
-         🔵 FROM_THIS_DAY_ON
-      ===================================================== */
+      if (ex.type === 'EXTRA_SHIFT') {
+        continue;
+      }
 
-      if (ex.mode === 'FROM_THIS_DAY_ON') {
+      /* ---------------------------
+         ✅ MODIFIED_SHIFT (NUEVO MODELO)
+      --------------------------- */
+      if (ex.type === 'MODIFIED_SHIFT') {
 
-        if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
+        const candidateShifts = await this.prisma.shift.findMany({
+          where: {
+            scheduleId,
+            weekday,
+            validFrom: { lte: exDate },
+            OR: [
+              { validTo: null },
+              { validTo: { gte: exDate } },
+            ],
+          },
+        });
 
-          await this.prisma.scheduleException.create({
-            data: {
-              scheduleId,
-              type: ex.type,
-              date: exDate,
-            },
+        console.log('🧪 CANDIDATE SHIFTS', candidateShifts);
+
+        // 🔑 CLAVE: usar blocks del frontend
+        const remainingBlocks = ex.blocks ?? [];
+
+        console.log('🧪 REMAINING BLOCKS (FROM FRONT)', remainingBlocks);
+
+        await this.prisma.scheduleException.deleteMany({
+          where: { scheduleId, date: exDate },
+        });
+
+        const exception = await this.prisma.scheduleException.create({
+          data: {
+            scheduleId,
+            type: 'MODIFIED_SHIFT',
+            date: exDate,
+          },
+        });
+
+        if (remainingBlocks.length > 0) {
+          await this.prisma.scheduleExceptionBlock.createMany({
+            data: remainingBlocks.map(b => ({
+              exceptionId: exception.id,
+              startTime: b.startTime,
+              endTime: b.endTime,
+            })),
           });
-
-          continue;
         }
 
-        if (ex.type === 'EXTRA_SHIFT') {
-          continue;
-        }
+        continue;
+      }
+    }
 
-        if (ex.type === 'MODIFIED_SHIFT') {
+    /* =====================================================
+       🔵 FROM_THIS_DAY_ON
+    ===================================================== */
 
-          const candidateShifts = await this.prisma.shift.findMany({
-            where: {
-              scheduleId,
-              weekday,
-              validFrom: { lte: exDate },
-              OR: [
-                { validTo: null },
-                { validTo: { gte: exDate } },
-              ],
-            },
-          });
+    if (ex.mode === 'FROM_THIS_DAY_ON') {
 
-          console.log('🧪 STRUCTURAL CANDIDATES', candidateShifts);
+      if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
 
-          if (candidateShifts.length === 0) continue;
+        await this.prisma.scheduleException.create({
+          data: {
+            scheduleId,
+            type: ex.type,
+            date: exDate,
+          },
+        });
 
-          for (const shift of candidateShifts) {
+        continue;
+      }
 
-            if (shift.validFrom > exDate) {
+      if (ex.type === 'EXTRA_SHIFT') continue;
 
-              await this.prisma.shift.delete({
-                where: { id: shift.id },
-              });
+      if (ex.type === 'MODIFIED_SHIFT') {
 
-            } else {
+        const candidateShifts = await this.prisma.shift.findMany({
+          where: {
+            scheduleId,
+            weekday,
+            validFrom: { lte: exDate },
+            OR: [
+              { validTo: null },
+              { validTo: { gte: exDate } },
+            ],
+          },
+        });
 
-              const previousDay = new Date(exDate);
-              previousDay.setDate(previousDay.getDate() - 1);
-              previousDay.setHours(23, 59, 59, 999);
+        console.log('🧪 STRUCTURAL CANDIDATES', candidateShifts);
 
-              await this.prisma.shift.update({
-                where: { id: shift.id },
-                data: { validTo: previousDay },
-              });
-            }
+        if (candidateShifts.length === 0) continue;
+
+        for (const shift of candidateShifts) {
+
+          if (shift.validFrom > exDate) {
+
+            await this.prisma.shift.delete({
+              where: { id: shift.id },
+            });
+
+          } else {
+
+            const previousDay = new Date(exDate);
+            previousDay.setDate(previousDay.getDate() - 1);
+            previousDay.setHours(23, 59, 59, 999);
+
+            await this.prisma.shift.update({
+              where: { id: shift.id },
+              data: { validTo: previousDay },
+            });
           }
         }
       }
     }
-
-    return { ok: true };
   }
+
+  return { ok: true };
+}
 
 
   /* ======================================================
