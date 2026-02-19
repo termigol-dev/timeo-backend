@@ -364,7 +364,8 @@ export class SchedulesService {
    OBTENER HORARIO ACTIVO
 ====================================================== */
   async getActiveSchedule(userId: string, weekStartStr?: string) {
-
+  try {
+    console.log('🧪 SERVICE getActiveSchedule START', { userId, weekStartStr });
     /* ==================================================
        🔑 helper local — fusionar bloques contiguos
     ================================================== */
@@ -372,12 +373,12 @@ export class SchedulesService {
       startTime: string;
       endTime: string;
       source: string;
-    }[]) => {
+    }[] = []) => {
 
-      if (!turns.length) return [];
+      if (!Array.isArray(turns) || turns.length === 0) return [];
 
       const sorted = [...turns].sort(
-        (a, b) => a.startTime.localeCompare(b.startTime)
+        (a, b) => (a.startTime || '').localeCompare(b.startTime || '')
       );
 
       const merged = [{ ...sorted[0] }];
@@ -386,6 +387,8 @@ export class SchedulesService {
 
         const last = merged[merged.length - 1];
         const cur = sorted[i];
+
+        if (!last || !cur) continue;
 
         if (cur.startTime <= last.endTime) {
           if (cur.endTime > last.endTime) {
@@ -400,36 +403,25 @@ export class SchedulesService {
     };
 
     /* ==================================================
-       1️⃣ CALCULAR WEEKSTART (SIEMPRE LUNES LOCAL)
+       1️⃣ CALCULAR WEEKSTART
     ================================================== */
     let weekStart: Date;
 
-    if (weekStartStr) {
-      const d = new Date(weekStartStr);
-      d.setHours(0, 0, 0, 0);
+    const base = weekStartStr ? new Date(weekStartStr) : new Date();
+    base.setHours(0, 0, 0, 0);
 
-      const jsDay = d.getDay();
-      const offset = jsDay === 0 ? -6 : 1 - jsDay;
+    const jsDay = base.getDay();
+    const offset = jsDay === 0 ? -6 : 1 - jsDay;
 
-      d.setDate(d.getDate() + offset);
-      weekStart = d;
-    } else {
-      const d = new Date();
-      d.setHours(0, 0, 0, 0);
-
-      const jsDay = d.getDay();
-      const offset = jsDay === 0 ? -6 : 1 - jsDay;
-
-      d.setDate(d.getDate() + offset);
-      weekStart = d;
-    }
+    base.setDate(base.getDate() + offset);
+    weekStart = base;
 
     const weekEnd = new Date(weekStart);
     weekEnd.setDate(weekStart.getDate() + 6);
     weekEnd.setHours(23, 59, 59, 999);
 
     /* ==================================================
-       2️⃣ OBTENER SCHEDULE ACTIVO
+       2️⃣ OBTENER SCHEDULE
     ================================================== */
     const schedule = await this.prisma.schedule.findFirst({
       where: {
@@ -440,17 +432,17 @@ export class SchedulesService {
           { validTo: { gte: weekStart } },
         ],
       },
-      orderBy: {
-        validFrom: 'desc',
-      },
+      orderBy: { validFrom: 'desc' },
       include: {
         shifts: true,
-        exceptions: {
-          include: {
-            blocks: true,
-          },
-        },
+        exceptions: { include: { blocks: true } },
       },
+    });
+
+    console.log('🧪 schedule loaded:', {
+      id: schedule?.id,
+      shifts: schedule?.shifts?.length,
+      exceptions: schedule?.exceptions?.length,
     });
 
     if (!schedule) {
@@ -464,7 +456,7 @@ export class SchedulesService {
     const days = [];
 
     /* ==================================================
-       3️⃣ RECORRER LUNES → DOMINGO
+       3️⃣ RECORRER SEMANA
     ================================================== */
     for (let i = 0; i < 7; i++) {
 
@@ -473,14 +465,17 @@ export class SchedulesService {
       date.setHours(0, 0, 0, 0);
 
       const dateStr = this.formatDateLocal(date);
+      console.log('🧪 building day:', dateStr);
 
       const jsDay = date.getDay();
       const weekday = jsDay === 0 ? 7 : jsDay;
 
       /* ----------------------------------------------
-         4️⃣ SHIFTS BASE VIGENTES ESE DÍA
+         SHIFTS BASE
       ---------------------------------------------- */
-      const activeShifts = schedule.shifts.filter(shift => {
+      const activeShifts = (schedule.shifts || []).filter(shift => {
+
+        if (!shift.validFrom) return false;
 
         const from = new Date(shift.validFrom);
         from.setHours(0, 0, 0, 0);
@@ -502,10 +497,16 @@ export class SchedulesService {
       }));
 
       /* ----------------------------------------------
-         5️⃣ EXCEPCIÓN DEL DÍA
+         EXCEPCIÓN DEL DÍA (BLINDADA)
       ---------------------------------------------- */
-      const exception = schedule.exceptions.find(ex => {
-        const exDateStr = this.formatDateLocal(new Date(ex.date));
+      const exception = (schedule.exceptions || []).find(ex => {
+
+        if (!ex?.date) return false;
+
+        const d = new Date(ex.date);
+        if (isNaN(d.getTime())) return false;
+
+        const exDateStr = this.formatDateLocal(d);
         return exDateStr === dateStr;
       });
 
@@ -513,18 +514,15 @@ export class SchedulesService {
 
       if (exception) {
 
-        // VACATION → día vacío total
         if (exception.type === 'VACATION') {
           isVacation = true;
           finalTurns = [];
         }
 
-        // MODIFIED_SHIFT → redefinir completamente el día
         else if (exception.type === 'MODIFIED_SHIFT') {
 
           const blocks = exception.blocks ?? [];
 
-          // Si no hay bloques → día vacío (turno eliminado)
           if (blocks.length === 0) {
             finalTurns = [];
           } else {
@@ -537,9 +535,7 @@ export class SchedulesService {
         }
       }
 
-      /* ----------------------------------------------
-         6️⃣ FUSIONAR BLOQUES
-      ---------------------------------------------- */
+      /* ---------------------------------------------- */
       finalTurns = mergeTurns(finalTurns);
 
       days.push({
@@ -555,7 +551,13 @@ export class SchedulesService {
       weekStart: this.formatDateLocal(weekStart),
       days,
     };
+
+  } catch (e) {
+    console.error('🔥 getActiveSchedule CRASH:', e);
+    throw e;
   }
+  
+}
 
   async addExceptions(
     scheduleId: string,
