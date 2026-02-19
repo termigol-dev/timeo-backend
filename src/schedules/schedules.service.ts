@@ -593,9 +593,24 @@ export class SchedulesService {
 
         if (ex.type === 'VACATION' || ex.type === 'DAY_OFF') {
 
-          await this.prisma.scheduleException.deleteMany({
+          // 🔴 borrar blocks primero (FK)
+          const existing = await this.prisma.scheduleException.findMany({
             where: { scheduleId, date: exDate },
+            select: { id: true },
           });
+
+          if (existing.length > 0) {
+
+            await this.prisma.scheduleExceptionBlock.deleteMany({
+              where: {
+                exceptionId: { in: existing.map(e => e.id) },
+              },
+            });
+
+            await this.prisma.scheduleException.deleteMany({
+              where: { id: { in: existing.map(e => e.id) } },
+            });
+          }
 
           await this.prisma.scheduleException.create({
             data: {
