@@ -77,130 +77,115 @@ export class SchedulesService {
     AÑADIR TURNO (BORRADOR)
  ====================================================== */
   async addShiftToSchedule(
-    scheduleId: string,
-    data: {
-      weekday: number;
-      startTime: string;
-      endTime: string;
-      validFrom: string;
-      validTo?: string;
-    },
-  ) {
-    try {
-      console.log('🟡 ADD SHIFT SERVICE INPUT:', {
+  scheduleId: string,
+  data: {
+    weekday: number;
+    startTime: string;
+    endTime: string;
+    validFrom: string;
+    validTo?: string;
+  },
+) {
+  try {
+    console.log('🟡 ADD SHIFT SERVICE INPUT:', {
+      scheduleId,
+      data,
+    });
+
+    const { weekday, startTime, endTime, validFrom, validTo } = data;
+
+    if (
+      weekday === null ||
+      weekday === undefined ||
+      Number.isNaN(weekday)
+    ) {
+      throw new BadRequestException('Día inválido (weekday nulo)');
+    }
+
+    if (weekday < 1 || weekday > 7) {
+      throw new BadRequestException(
+        `Día inválido: ${weekday}. Debe ser 1 (lunes) a 7 (domingo)`,
+      );
+    }
+
+    if (!startTime || !endTime) {
+      throw new BadRequestException('Horas inválidas');
+    }
+
+    if (startTime >= endTime) {
+      throw new BadRequestException(
+        'La hora de inicio debe ser anterior a la de fin',
+      );
+    }
+
+    if (!validFrom) {
+      throw new BadRequestException('validFrom es obligatorio');
+    }
+
+    const parseLocalDate = (str: string): Date => {
+      const [y, m, d] = str.split('-').map(Number);
+      if (!y || !m || !d) {
+        throw new BadRequestException(`Fecha inválida: ${str}`);
+      }
+      const date = new Date(y, m - 1, d);
+      date.setHours(0, 0, 0, 0);
+      return date;
+    };
+
+    const fromDate = parseLocalDate(validFrom);
+    const toDate = validTo ? parseLocalDate(validTo) : null;
+
+    if (toDate && fromDate.getTime() > toDate.getTime()) {
+      throw new BadRequestException(
+        'La fecha de inicio no puede ser posterior a la de fin',
+      );
+    }
+
+    const today = new Date();
+    today.setHours(0, 0, 0, 0);
+
+    if (fromDate.getTime() < today.getTime()) {
+      throw new BadRequestException(
+        'No se pueden crear o modificar turnos en el pasado',
+      );
+    }
+
+    // ==================================================
+    // 🧠 TIMEO — OVERRIDE DAY RULE
+    // ==================================================
+    const hasOverride = await this.prisma.scheduleException.findFirst({
+      where: {
         scheduleId,
-        data,
-      });
+        date: fromDate,
+        type: 'MODIFIED_SHIFT',
+      },
+      select: { id: true },
+    });
 
-      const { weekday, startTime, endTime, validFrom, validTo } = data;
-
-      if (
-        weekday === null ||
-        weekday === undefined ||
-        Number.isNaN(weekday)
-      ) {
-        throw new BadRequestException('Día inválido (weekday nulo)');
-      }
-
-      if (weekday < 1 || weekday > 7) {
-        throw new BadRequestException(
-          `Día inválido: ${weekday}. Debe ser 1 (lunes) a 7 (domingo)`,
-        );
-      }
-
-      if (!startTime || !endTime) {
-        throw new BadRequestException('Horas inválidas');
-      }
-
-      if (startTime >= endTime) {
-        throw new BadRequestException(
-          'La hora de inicio debe ser anterior a la de fin',
-        );
-      }
-
-      if (!validFrom) {
-        throw new BadRequestException('validFrom es obligatorio');
-      }
-
-      const parseLocalDate = (str: string): Date => {
-        const [y, m, d] = str.split('-').map(Number);
-        if (!y || !m || !d) {
-          throw new BadRequestException(`Fecha inválida: ${str}`);
-        }
-        const date = new Date(y, m - 1, d);
-        date.setHours(0, 0, 0, 0);
-        return date;
-      };
-
-      const fromDate = parseLocalDate(validFrom);
-      const toDate = validTo ? parseLocalDate(validTo) : null;
-
-      if (toDate && fromDate.getTime() > toDate.getTime()) {
-        throw new BadRequestException(
-          'La fecha de inicio no puede ser posterior a la de fin',
-        );
-      }
-
-      const today = new Date();
-      today.setHours(0, 0, 0, 0);
-
-      if (fromDate.getTime() < today.getTime()) {
-        throw new BadRequestException(
-          'No se pueden crear o modificar turnos en el pasado',
-        );
-      }
-
-      // ==================================================
-      // 🧠 TIMEO SNAPSHOT RULE
-      // ==================================================
-      const exception = await this.prisma.scheduleException.findFirst({
+    if (!hasOverride) {
+      const existingShifts = await this.prisma.shift.findMany({
         where: {
           scheduleId,
-          date: fromDate,
-          type: 'MODIFIED_SHIFT',
+          weekday,
+          AND: [
+            {
+              OR: [
+                { validTo: null },
+                { validTo: { gte: fromDate } },
+              ],
+            },
+            {
+              validFrom: {
+                lte: toDate ?? new Date('9999-12-31'),
+              },
+            },
+          ],
         },
-        include: { blocks: true },
       });
 
-      let itemsToCheck: { startTime: string; endTime: string }[];
-
-      if (exception) {
-        console.log('🧠 SNAPSHOT MODE — validar contra excepción');
-
-        itemsToCheck = exception.blocks.map(b => ({
-          startTime: b.startTime,
-          endTime: b.endTime,
-        }));
-      } else {
-        const existingShifts = await this.prisma.shift.findMany({
-          where: {
-            scheduleId,
-            weekday,
-            AND: [
-              {
-                OR: [
-                  { validTo: null },
-                  { validTo: { gte: fromDate } },
-                ],
-              },
-              {
-                validFrom: {
-                  lte: toDate ?? new Date('9999-12-31'),
-                },
-              },
-            ],
-          },
-        });
-
-        itemsToCheck = existingShifts;
-      }
-
-      // ==================================================
-      // COMPROBAR SOLAPE HORARIO
-      // ==================================================
-      const hasOverlap = itemsToCheck.some(item =>
-        startTime < item.endTime &&
-        endTime > item.startTime,
+      const hasOverlap = existingShifts.some(shift =>
+        startTime < shift.endTime &&
+        endTime > shift.startTime,
       );
 
       if (hasOverlap) {
@@ -208,31 +193,30 @@ export class SchedulesService {
           'El turno se solapa con uno existente en esas fechas',
         );
       }
-
-      // ==================================================
-      // CREAR TURNO
-      // ==================================================
-      const created = await this.prisma.shift.create({
-        data: {
-          scheduleId,
-          weekday,
-          startTime,
-          endTime,
-          validFrom: fromDate,
-          validTo: toDate,
-        },
-      });
-
-      console.log('🟢 TURNO CREADO:', created);
-
-      return created;
-
-    } catch (err) {
-      console.error('❌ ERROR EN addShiftToSchedule:', err);
-      throw err;
+    } else {
+      console.log('🧠 OVERRIDE DAY → skip overlap validation');
     }
-  }
 
+    const created = await this.prisma.shift.create({
+      data: {
+        scheduleId,
+        weekday,
+        startTime,
+        endTime,
+        validFrom: fromDate,
+        validTo: toDate,
+      },
+    });
+
+    console.log('🟢 TURNO CREADO:', created);
+
+    return created;
+
+  } catch (err) {
+    console.error('❌ ERROR EN addShiftToSchedule:', err);
+    throw err;
+  }
+}
   /*=======================================================
        AÑADIR VACACIONES (BORRADOR)
     ====================================================== */
