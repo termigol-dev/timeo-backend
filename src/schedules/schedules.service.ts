@@ -76,7 +76,7 @@ export class SchedulesService {
   /* ======================================================
     AÑADIR TURNO (BORRADOR)
  ====================================================== */
-  async addShiftToSchedule(
+async addShiftToSchedule(
   scheduleId: string,
   data: {
     weekday: number;
