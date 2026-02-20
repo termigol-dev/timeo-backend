@@ -87,115 +87,124 @@ async addShiftToSchedule(
   },
 ) {
   try {
-    console.log('🟡 ADD SHIFT SERVICE INPUT:', {
-      scheduleId,
-      data,
-    });
+    console.log('🟡 ADD SHIFT SERVICE INPUT:', { scheduleId, data });
 
     const { weekday, startTime, endTime, validFrom, validTo } = data;
 
-    if (
-      weekday === null ||
-      weekday === undefined ||
-      Number.isNaN(weekday)
-    ) {
-      throw new BadRequestException('Día inválido (weekday nulo)');
+    if (weekday == null || Number.isNaN(weekday)) {
+      throw new BadRequestException('Día inválido');
     }
 
     if (weekday < 1 || weekday > 7) {
-      throw new BadRequestException(
-        `Día inválido: ${weekday}. Debe ser 1 (lunes) a 7 (domingo)`,
-      );
+      throw new BadRequestException('weekday fuera de rango');
     }
 
-    if (!startTime || !endTime) {
+    if (!startTime || !endTime || startTime >= endTime) {
       throw new BadRequestException('Horas inválidas');
     }
 
-    if (startTime >= endTime) {
-      throw new BadRequestException(
-        'La hora de inicio debe ser anterior a la de fin',
-      );
-    }
-
     if (!validFrom) {
-      throw new BadRequestException('validFrom es obligatorio');
+      throw new BadRequestException('validFrom obligatorio');
     }
 
-    const parseLocalDate = (str: string): Date => {
-      const [y, m, d] = str.split('-').map(Number);
-      if (!y || !m || !d) {
-        throw new BadRequestException(`Fecha inválida: ${str}`);
-      }
-      const date = new Date(y, m - 1, d);
-      date.setHours(0, 0, 0, 0);
-      return date;
+    const parseLocal = (s: string) => {
+      const [y, m, d] = s.split('-').map(Number);
+      const dt = new Date(y, m - 1, d);
+      dt.setHours(0, 0, 0, 0);
+      return dt;
     };
 
-    const fromDate = parseLocalDate(validFrom);
-    const toDate = validTo ? parseLocalDate(validTo) : null;
-
-    if (toDate && fromDate.getTime() > toDate.getTime()) {
-      throw new BadRequestException(
-        'La fecha de inicio no puede ser posterior a la de fin',
-      );
-    }
+    const fromDate = parseLocal(validFrom);
+    const toDate = validTo ? parseLocal(validTo) : fromDate;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
 
-    if (fromDate.getTime() < today.getTime()) {
-      throw new BadRequestException(
-        'No se pueden crear o modificar turnos en el pasado',
-      );
+    if (fromDate < today) {
+      throw new BadRequestException('No tocar pasado');
     }
 
-    // ==================================================
-    // 🧠 TIMEO — OVERRIDE DAY RULE
-    // ==================================================
-    const hasOverride = await this.prisma.scheduleException.findFirst({
-      where: {
-        scheduleId,
-        date: fromDate,
-        type: 'MODIFIED_SHIFT',
-      },
-      select: { id: true },
-    });
+    /* =====================================================
+       RECORRER DÍAS DEL RANGO
+    ===================================================== */
 
-    if (!hasOverride) {
-      const existingShifts = await this.prisma.shift.findMany({
+    const daysToOverride: {
+      date: string;
+      blocks: { startTime: string; endTime: string }[];
+    }[] = [];
+
+    for (
+      let d = new Date(fromDate);
+      d.getTime() <= toDate.getTime();
+      d.setDate(d.getDate() + 1)
+    ) {
+      const js = d.getDay();
+      const wd = js === 0 ? 7 : js;
+
+      if (wd !== weekday) continue;
+
+      const dateStr = this.formatDateLocal(d);
+
+      const existingException = await this.prisma.scheduleException.findFirst({
+        where: { scheduleId, date: d },
+        include: { blocks: true },
+      });
+
+      if (existingException) {
+        console.log('🧠 EXISTE EXCEPCIÓN → overwrite');
+
+        daysToOverride.push({
+          date: dateStr,
+          blocks: [{ startTime, endTime }],
+        });
+
+        continue;
+      }
+
+      const shifts = await this.prisma.shift.findMany({
         where: {
           scheduleId,
           weekday,
-          AND: [
-            {
-              OR: [
-                { validTo: null },
-                { validTo: { gte: fromDate } },
-              ],
-            },
-            {
-              validFrom: {
-                lte: toDate ?? new Date('9999-12-31'),
-              },
-            },
-          ],
+          validFrom: { lte: d },
+          OR: [{ validTo: null }, { validTo: { gte: d } }],
         },
       });
 
-      const hasOverlap = existingShifts.some(shift =>
-        startTime < shift.endTime &&
-        endTime > shift.startTime,
+      const overlap = shifts.some(
+        s => startTime < s.endTime && endTime > s.startTime,
       );
 
-      if (hasOverlap) {
-        throw new BadRequestException(
-          'El turno se solapa con uno existente en esas fechas',
-        );
+      if (overlap) {
+        console.log('🧠 SOLAPA PATRÓN → snapshot');
+
+        daysToOverride.push({
+          date: dateStr,
+          blocks: [{ startTime, endTime }],
+        });
       }
-    } else {
-      console.log('🧠 OVERRIDE DAY → skip overlap validation');
     }
+
+    /* =====================================================
+       SI HAY EXCEPCIONES → delegar
+    ===================================================== */
+
+    if (daysToOverride.length > 0) {
+      await this.addExceptions(
+        scheduleId,
+        daysToOverride.map(d => ({
+          type: 'MODIFIED_SHIFT',
+          date: d.date,
+          blocks: d.blocks,
+        })),
+      );
+
+      console.log('🟣 EXCEPCIONES CREADAS:', daysToOverride.length);
+      return { ok: true, mode: 'exception' };
+    }
+
+    /* =====================================================
+       SI NO → CREAR SHIFT NORMAL
+    ===================================================== */
 
     const created = await this.prisma.shift.create({
       data: {
@@ -204,12 +213,11 @@ async addShiftToSchedule(
         startTime,
         endTime,
         validFrom: fromDate,
-        validTo: toDate,
+        validTo: validTo ? parseLocal(validTo) : null,
       },
     });
 
-    console.log('🟢 TURNO CREADO:', created);
-
+    console.log('🟢 SHIFT NORMAL CREADO:', created);
     return created;
 
   } catch (err) {
