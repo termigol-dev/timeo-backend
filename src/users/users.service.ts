@@ -513,57 +513,72 @@ export class UsersService {
 
   /* ───────── BORRADO DEFINITIVO ───────── */
 
-  async hardDeleteEmployee(companyId: string, employeeId: string) {
-    return this.prisma.$transaction(async prisma => {
+async hardDeleteEmployee(companyId: string, employeeId: string) {
+  return this.prisma.$transaction(async prisma => {
 
-      const memberships = await prisma.membership.findMany({
-        where: {
-          userId: employeeId,
-          companyId,
-        },
-      });
-
-      const membershipIds = memberships.map(m => m.id);
-
-      const schedules = await prisma.schedule.findMany({
-        where: { userId: employeeId },
-        select: { id: true },
-      });
-
-      const scheduleIds = schedules.map(s => s.id);
-
-      await prisma.scheduleException.deleteMany({
-        where: { scheduleId: { in: scheduleIds } },
-      });
-
-      await prisma.shift.deleteMany({
-        where: { scheduleId: { in: scheduleIds } },
-      });
-
-      await prisma.schedule.deleteMany({
-        where: { id: { in: scheduleIds } },
-      });
-
-      await prisma.incident.deleteMany({
-        where: { userId: employeeId },
-      });
-
-      await prisma.record.deleteMany({
-        where: { userId: employeeId },
-      });
-
-      await prisma.membership.deleteMany({
-        where: { id: { in: membershipIds } },
-      });
-
-      await prisma.user.delete({
-        where: { id: employeeId },
-      });
-
-      return { ok: true };
+    const memberships = await prisma.membership.findMany({
+      where: {
+        userId: employeeId,
+        companyId,
+      },
     });
-  }
 
+    const membershipIds = memberships.map(m => m.id);
+
+    const schedules = await prisma.schedule.findMany({
+      where: { userId: employeeId },
+      select: { id: true },
+    });
+
+    const scheduleIds = schedules.map(s => s.id);
+
+    // ✅ 1️⃣ blocks primero (CLAVE)
+    await prisma.scheduleExceptionBlock.deleteMany({
+      where: {
+        exception: {
+          scheduleId: { in: scheduleIds },
+        },
+      },
+    });
+
+    // ✅ 2️⃣ exceptions
+    await prisma.scheduleException.deleteMany({
+      where: { scheduleId: { in: scheduleIds } },
+    });
+
+    // ✅ 3️⃣ shifts
+    await prisma.shift.deleteMany({
+      where: { scheduleId: { in: scheduleIds } },
+    });
+
+    // ✅ 4️⃣ schedules
+    await prisma.schedule.deleteMany({
+      where: { id: { in: scheduleIds } },
+    });
+
+    // ✅ 5️⃣ incidents
+    await prisma.incident.deleteMany({
+      where: { userId: employeeId },
+    });
+
+    // ✅ 6️⃣ records
+    await prisma.record.deleteMany({
+      where: { userId: employeeId },
+    });
+
+    // ✅ 7️⃣ membership
+    await prisma.membership.deleteMany({
+      where: { id: { in: membershipIds } },
+    });
+
+    // ✅ 8️⃣ user
+    await prisma.user.delete({
+      where: { id: employeeId },
+    });
+
+    return { ok: true };
+  });
+}
   /* ───────── BORRADO EMPLEADO (INTELIGENTE) ───────── */
 
   async checkDeleteUser(
