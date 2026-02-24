@@ -90,10 +90,17 @@ export class SchedulesController {
       shiftId?: string;
     },
   ) {
-    return this.schedulesService.deleteShift(
-      scheduleId,
-      body,
-    );
+    // 🧠 Traducir intención frontend → acción backend
+    const mappedMode =
+      body.mode === 'FROM_THIS_DAY_ON'
+        ? 'END_SHIFT'
+        : 'DELETE_SHIFT';
+
+    return this.schedulesService.deleteShift(scheduleId, {
+      mode: mappedMode,
+      shiftId: body.shiftId!,
+      date: body.dateFrom,
+    });
   }
   /* ======================================================
      CALCULAR HORAS SEMANALES (PREVIEW)
