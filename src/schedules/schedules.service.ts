@@ -91,6 +91,9 @@ async addShiftToSchedule(
 
     const { weekday, startTime, endTime, validFrom, validTo } = data;
 
+    // ================================
+    // VALIDACIONES BÁSICAS
+    // ================================
     if (weekday == null || Number.isNaN(weekday)) {
       throw new BadRequestException('Día inválido');
     }
@@ -115,7 +118,7 @@ async addShiftToSchedule(
     };
 
     const fromDate = parseLocal(validFrom);
-    const toDate = validTo ? parseLocal(validTo) : fromDate;
+    const toDate = validTo ? parseLocal(validTo) : null;
 
     const today = new Date();
     today.setHours(0, 0, 0, 0);
@@ -124,88 +127,9 @@ async addShiftToSchedule(
       throw new BadRequestException('No tocar pasado');
     }
 
-    /* =====================================================
-       RECORRER DÍAS DEL RANGO
-    ===================================================== */
-
-    const daysToOverride: {
-      date: string;
-      blocks: { startTime: string; endTime: string }[];
-    }[] = [];
-
-    for (
-      let d = new Date(fromDate);
-      d.getTime() <= toDate.getTime();
-      d.setDate(d.getDate() + 1)
-    ) {
-      const js = d.getDay();
-      const wd = js === 0 ? 7 : js;
-
-      if (wd !== weekday) continue;
-
-      const dateStr = this.formatDateLocal(d);
-
-      const existingException = await this.prisma.scheduleException.findFirst({
-        where: { scheduleId, date: d },
-        include: { blocks: true },
-      });
-
-      if (existingException) {
-        console.log('🧠 EXISTE EXCEPCIÓN → overwrite');
-
-        daysToOverride.push({
-          date: dateStr,
-          blocks: [{ startTime, endTime }],
-        });
-
-        continue;
-      }
-
-      const shifts = await this.prisma.shift.findMany({
-        where: {
-          scheduleId,
-          weekday,
-          validFrom: { lte: d },
-          OR: [{ validTo: null }, { validTo: { gte: d } }],
-        },
-      });
-
-      const overlap = shifts.some(
-        s => startTime < s.endTime && endTime > s.startTime,
-      );
-
-      if (overlap) {
-        console.log('🧠 SOLAPA PATRÓN → snapshot');
-
-        daysToOverride.push({
-          date: dateStr,
-          blocks: [{ startTime, endTime }],
-        });
-      }
-    }
-
-    /* =====================================================
-       SI HAY EXCEPCIONES → delegar
-    ===================================================== */
-
-    if (daysToOverride.length > 0) {
-      await this.addExceptions(
-        scheduleId,
-        daysToOverride.map(d => ({
-          type: 'MODIFIED_SHIFT',
-          date: d.date,
-          blocks: d.blocks,
-        })),
-      );
-
-      console.log('🟣 EXCEPCIONES CREADAS:', daysToOverride.length);
-      return { ok: true, mode: 'exception' };
-    }
-
-    /* =====================================================
-       SI NO → CREAR SHIFT NORMAL
-    ===================================================== */
-
+    // ================================
+    // INSERTAR SHIFT (SIN PENSAR)
+    // ================================
     const created = await this.prisma.shift.create({
       data: {
         scheduleId,
@@ -213,11 +137,11 @@ async addShiftToSchedule(
         startTime,
         endTime,
         validFrom: fromDate,
-        validTo: validTo ? parseLocal(validTo) : null,
+        validTo: toDate,
       },
     });
 
-    console.log('🟢 SHIFT NORMAL CREADO:', created);
+    console.log('🟢 SHIFT CREADO:', created);
     return created;
 
   } catch (err) {
@@ -796,165 +720,57 @@ async addShiftToSchedule(
       ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
    ====================================================== */
   async deleteShift(
-    scheduleId: string,
-    body: {
-      source: 'PANEL' | 'CALENDAR';
-      mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
-      dateFrom?: string;
-      dateTo?: string;
-      startTime?: string;
-      endTime?: string;
-      shiftId?: string;
-    },
-  ) {
-    const { mode, dateFrom, startTime, endTime } = body;
+  scheduleId: string,
+  body: {
+    mode: 'END_SHIFT' | 'DELETE_SHIFT';
+    shiftId: string;
+    date?: string;
+  },
+) {
+  const { mode, shiftId, date } = body;
 
-    if (!dateFrom || !startTime || !endTime) {
-      throw new BadRequestException(
-        'dateFrom, startTime y endTime son obligatorios',
-      );
+  if (!shiftId) {
+    throw new BadRequestException('shiftId obligatorio');
+  }
+
+  // ===============================
+  // END_SHIFT → cerrar patrón
+  // ===============================
+  if (mode === 'END_SHIFT') {
+
+    if (!date) {
+      throw new BadRequestException('date obligatoria para END_SHIFT');
     }
 
-    const baseDate = new Date(dateFrom);
+    const baseDate = new Date(date);
     baseDate.setHours(0, 0, 0, 0);
 
-    const jsDay = baseDate.getDay();
-    const weekday = jsDay === 0 ? 7 : jsDay;
+    const dayBefore = new Date(baseDate);
+    dayBefore.setDate(dayBefore.getDate() - 1);
+    dayBefore.setHours(23, 59, 59, 999);
 
-    if (weekday < 1 || weekday > 7) {
-      return { count: 0 };
-    }
+    const updated = await this.prisma.shift.update({
+      where: { id: shiftId },
+      data: { validTo: dayBefore },
+    });
 
-    // ======================================================
-    // SOLO ESTE BLOQUE  → excepción
-    // ======================================================
-    if (mode === 'ONLY_THIS_BLOCK') {
-
-      // 1️⃣ Eliminar excepción previa del día
-      await this.prisma.scheduleException.deleteMany({
-        where: {
-          scheduleId,
-          date: baseDate,
-        },
-      });
-
-      // 2️⃣ Crear excepción MODIFIED_SHIFT
-      const exception = await this.prisma.scheduleException.create({
-        data: {
-          scheduleId,
-          date: baseDate,
-          type: 'MODIFIED_SHIFT',
-        },
-      });
-
-      // 3️⃣ Crear bloque que REPRESENTA LO QUE QUEDA
-      // OJO: deleteShift recibe el bloque que se quiere eliminar,
-      // pero el modelo nuevo guarda los bloques que SÍ se trabajan.
-      // Como aquí estamos usando la versión antigua,
-      // lo mantenemos como bloque único (recortado luego en getActiveSchedule)
-
-      await this.prisma.scheduleExceptionBlock.create({
-        data: {
-          exceptionId: exception.id,
-          startTime,
-          endTime,
-        },
-      });
-
-      return { created: true };
-    }
-
-    // ======================================================
-    // FROM_THIS_DAY_ON  → estructural por rango
-    // ======================================================
-    if (mode === 'FROM_THIS_DAY_ON') {
-
-      const shifts = await this.prisma.shift.findMany({
-        where: {
-          scheduleId,
-          weekday,
-
-          // turno activo ese día
-          validFrom: { lte: baseDate },
-          OR: [
-            { validTo: null },
-            { validTo: { gte: baseDate } },
-          ],
-
-          // solape real con el rango horario
-          NOT: [
-            {
-              OR: [
-                { endTime: { lte: startTime } },
-                { startTime: { gte: endTime } },
-              ],
-            },
-          ],
-        },
-      });
-
-      if (!shifts.length) {
-        return { count: 0 };
-      }
-
-      const dayBefore = new Date(baseDate);
-      dayBefore.setDate(dayBefore.getDate() - 1);
-      dayBefore.setHours(23, 59, 59, 999);
-
-      let created = 0;
-
-      for (const shift of shifts) {
-
-        // 🔑 guardamos el validTo original
-        const originalValidTo = shift.validTo;
-
-        // cerramos el turno original
-        await this.prisma.shift.update({
-          where: { id: shift.id },
-          data: { validTo: dayBefore },
-        });
-
-        // parte izquierda
-        if (shift.startTime < startTime) {
-          await this.prisma.shift.create({
-            data: {
-              scheduleId,
-              weekday: shift.weekday,
-              startTime: shift.startTime,
-              endTime: startTime,
-              validFrom: baseDate,
-              validTo: originalValidTo,
-            },
-          });
-
-          created++;
-        }
-
-        // parte derecha
-        if (shift.endTime > endTime) {
-          await this.prisma.shift.create({
-            data: {
-              scheduleId,
-              weekday: shift.weekday,
-              startTime: endTime,
-              endTime: shift.endTime,
-              validFrom: baseDate,
-              validTo: originalValidTo,
-            },
-          });
-
-          created++;
-        }
-      }
-
-      return {
-        count: shifts.length,
-        created,
-      };
-    }
-
-    throw new BadRequestException('Modo de borrado no soportado');
+    return updated;
   }
+
+  // ===============================
+  // DELETE_SHIFT → borrar físico
+  // ===============================
+  if (mode === 'DELETE_SHIFT') {
+
+    await this.prisma.shift.delete({
+      where: { id: shiftId },
+    });
+
+    return { ok: true };
+  }
+
+  throw new BadRequestException('Modo no soportado');
+}
 
   /* ======================================================
    ELIMINAR VACACIONES
