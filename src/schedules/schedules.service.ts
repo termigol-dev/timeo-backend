@@ -719,7 +719,7 @@ async addShiftToSchedule(
   /* ======================================================
       ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
    ====================================================== */
-  async deleteShift(
+async deleteShift(
   scheduleId: string,
   body: {
     mode: 'END_SHIFT' | 'DELETE_SHIFT';
@@ -734,7 +734,7 @@ async addShiftToSchedule(
   }
 
   // ===============================
-  // END_SHIFT → cerrar patrón
+  // END_SHIFT → cerrar patrón limpio
   // ===============================
   if (mode === 'END_SHIFT') {
 
@@ -749,12 +749,38 @@ async addShiftToSchedule(
     dayBefore.setDate(dayBefore.getDate() - 1);
     dayBefore.setHours(23, 59, 59, 999);
 
-    const updated = await this.prisma.shift.update({
-      where: { id: shiftId },
-      data: { validTo: dayBefore },
-    });
+    return await this.prisma.$transaction(async (tx) => {
 
-    return updated;
+      // 1️⃣ cerrar turno
+      const updated = await tx.shift.update({
+        where: { id: shiftId },
+        data: { validTo: dayBefore },
+      });
+
+      // 2️⃣ borrar bloques de excepciones futuras
+      await tx.scheduleExceptionBlock.deleteMany({
+        where: {
+          exception: {
+            scheduleId,
+            date: {
+              gte: baseDate,
+            },
+          },
+        },
+      });
+
+      // 3️⃣ borrar excepciones futuras
+      await tx.scheduleException.deleteMany({
+        where: {
+          scheduleId,
+          date: {
+            gte: baseDate,
+          },
+        },
+      });
+
+      return updated;
+    });
   }
 
   // ===============================
