@@ -69,8 +69,8 @@ export class SchedulesController {
   }
 
   /* ======================================================
-     🆕 ELIMINAR TURNOS (PANEL SUPERIOR)
-  ====================================================== */
+   🆕 ELIMINAR TURNOS (PANEL SUPERIOR)
+====================================================== */
   @Delete(':scheduleId/shifts')
   @Roles(
     Role.SUPERADMIN,
@@ -85,23 +85,33 @@ export class SchedulesController {
       mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
       dateFrom?: string;
       dateTo?: string;
+      date?: string;
       startTime?: string;
       endTime?: string;
       shiftId?: string;
     },
   ) {
+
+    console.log('🧾 CONTROLLER DELETE SHIFT', {
+      scheduleId,
+      mode: body.mode,
+      shiftId: body.shiftId,
+      dateFrom: body.dateFrom,
+      date: body.date,
+    });
+
     // 🧠 Traducir intención frontend → acción backend
-    const mappedMode =
-      body.mode === 'FROM_THIS_DAY_ON'
-        ? 'END_SHIFT'
-        : 'DELETE_SHIFT';
+    const mappedMode = body.mode === 'ONLY_THIS_BLOCK'
+  ? 'DELETE_SHIFT'
+  : 'END_SHIFT';
 
     return this.schedulesService.deleteShift(scheduleId, {
       mode: mappedMode,
       shiftId: body.shiftId!,
-      date: body.dateFrom,
+      date: body.dateFrom ?? body.date, // ⭐ FIX REAL
     });
   }
+
   /* ======================================================
      CALCULAR HORAS SEMANALES (PREVIEW)
   ====================================================== */
