@@ -392,6 +392,31 @@ export class ReportsService {
       cursor.setDate(cursor.getDate() + 1);
     }
 
-    return { days };
+    const employee = await this.prisma.user.findUnique({
+      where: { id: targetUserId },
+      select: {
+        name: true,
+        firstSurname: true,
+        memberships: {
+          select: {
+            company: {
+              select: {
+                legalName: true,
+              },
+            },
+          },
+          take: 1,
+        },
+      },
+    });
+
+    return {
+      employee: {
+        name: employee?.name ?? '',
+        lastName: employee?.firstSurname ?? '',
+        companyName: employee?.memberships?.[0]?.company?.legalName ?? '',
+      },
+      days,
+    };
   }
 }
