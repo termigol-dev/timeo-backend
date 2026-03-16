@@ -1,4 +1,4 @@
-import { Controller, Post, Param } from '@nestjs/common';
+import { Controller, Post, Param, Get } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 
 @Controller('notifications')
@@ -6,7 +6,7 @@ export class NotificationsController {
 
   constructor(private notificationsService: NotificationsService) {}
 
-  @Post('test/:userId')
+  @Get('test/:userId')
   async testPush(@Param('userId') userId: string) {
 
     await this.notificationsService.sendToUser(userId, {
