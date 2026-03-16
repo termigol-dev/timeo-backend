@@ -5,17 +5,30 @@ import { PrismaService } from '../prisma/prisma.service';
 export class DevicesService {
   constructor(private prisma: PrismaService) { }
 
-  async registerDevice(userId: string, token: string, platform: 'WEB' | 'ANDROID' | 'IOS') {
+  async registerDevice(
+    userId: string,
+    token: string,
+    platform: 'WEB' | 'ANDROID' | 'IOS',
+  ) {
+
+    console.log('UPSERT DEVICE', {
+      userId,
+      token,
+      platform,
+    });
+
     return this.prisma.device.upsert({
-      where: { token },
+      where: {
+        token: token,
+      },
       update: {
-        userId,
-        platform,
+        userId: userId,
+        platform: platform,
       },
       create: {
-        userId,
-        token,
-        platform,
+        userId: userId,
+        token: token,
+        platform: platform,
       },
     });
   }
@@ -33,5 +46,5 @@ export class DevicesService {
       },
     });
   }
-  
+
 }
