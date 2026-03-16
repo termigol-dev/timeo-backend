@@ -11,6 +11,7 @@ import { DashboardModule } from './dashboard/dashboard.module';
 import { SchedulesModule } from './schedules/schedules.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { MobileModule } from './mobile/mobile.module'; // 👈 AÑADIDO
+import { DevicesModule } from './devices/devices.module';
 
 @Module({
   imports: [
@@ -25,7 +26,8 @@ import { MobileModule } from './mobile/mobile.module'; // 👈 AÑADIDO
     DashboardModule,
     SchedulesModule,
     IncidentsModule,
-    MobileModule, // 👈 REGISTRADO
+    MobileModule, 
+    DevicesModule,
   ],
 })
 export class AppModule {}

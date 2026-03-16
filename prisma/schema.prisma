@@ -69,6 +69,7 @@ model User {
   updatedAt     DateTime     @updatedAt
   photo         String?      @db.Text
 
+  devices     Device[]
   memberships Membership[]
   records     Record[]
   schedules   Schedule[]
@@ -153,6 +154,24 @@ model Incident {
   @@index([companyId])
   @@index([branchId])
   @@index([recordId])
+}
+
+/// ======================
+/// DEVICE (DISPOSITIVOS DEL USUARIO)
+/// ======================
+model Device {
+  id        String   @id @default(cuid())
+
+  userId    String
+  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  platform  DevicePlatform
+  token     String   @unique
+
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+
+  @@index([userId])
 }
 
 /// ======================
@@ -274,4 +293,10 @@ enum ScheduleExceptionType {
   SHIFT_OFF
   DAY_OFF        // no trabaja ese día
   VACATION       // vacaciones
+}
+
+enum DevicePlatform {
+  WEB
+  ANDROID
+  IOS
 }

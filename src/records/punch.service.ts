@@ -175,122 +175,90 @@ export class PunchService {
      🧠 EVALUACIÓN DE HORARIO (NUEVA LÓGICA JERÁRQUICA)
   ====================================================== */
 
-  private async evaluateSchedule({
-    userId,
-    branchId,
-    date,
-    type,
-  }: {
-    userId: string;
-    branchId: string;
-    date: Date;
-    type: RecordType;
-  }): Promise<ScheduleEvaluation> {
+ private async evaluateSchedule({
+  userId,
+  branchId,
+  date,
+  type,
+}: {
+  userId: string;
+  branchId: string;
+  date: Date;
+  type: RecordType;
+}): Promise<ScheduleEvaluation> {
 
-    const weekday = date.getDay() === 0 ? 7 : date.getDay();
+  const weekday = date.getDay() === 0 ? 7 : date.getDay();
 
-    const schedule = await this.prisma.schedule.findFirst({
-      where: {
-        userId,
-        branchId,
-        validFrom: { lte: date },
-        OR: [{ validTo: null }, { validTo: { gte: date } }],
-      },
-      include: { shifts: true },
-    });
+  const schedule = await this.prisma.schedule.findFirst({
+    where: {
+      userId,
+      branchId,
+      validFrom: { lte: date },
+      OR: [{ validTo: null }, { validTo: { gte: date } }],
+    },
+    include: { shifts: true },
+  });
 
-    if (!schedule) {
-      return { status: 'NO_SHIFT' };
-    }
-
-    const shiftsOfDay = schedule.shifts.filter(
-      s => s.weekday === weekday,
-    );
-
-    if (shiftsOfDay.length === 0) {
-      return { status: 'NO_SHIFT' };
-    }
-
-    const nowMinutes = date.getHours() * 60 + date.getMinutes();
-
-    const enriched = shiftsOfDay.map(s => ({
-      ...s,
-      startMinutes: this.timeToMinutes(s.startTime),
-      endMinutes: this.timeToMinutes(s.endTime),
-    }));
-
-    /* ============================
-       🔵 ENTRADA (IN)
-    ============================ */
-    if (type === RecordType.IN) {
-
-      // 1️⃣ Turno activo
-      const active = enriched.find(
-        s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes,
-      );
-
-      if (active) {
-        return this.evaluateDiff(
-          nowMinutes - active.startMinutes,
-          active.startTime,
-        );
-      }
-
-      // 2️⃣ Próximo turno del día
-      const upcoming = enriched
-        .filter(s => nowMinutes < s.startMinutes)
-        .sort((a, b) => a.startMinutes - b.startMinutes)[0];
-
-      if (upcoming) {
-        return this.evaluateDiff(
-          nowMinutes - upcoming.startMinutes,
-          upcoming.startTime,
-        );
-      }
-
-      // 3️⃣ Nada relevante
-      return { status: 'NO_SHIFT' };
-    }
-
-    /* ============================
-       🔴 SALIDA (OUT)
-    ============================ */
-
-    const active = enriched.find(
-      s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes,
-    );
-
-    if (active) {
-      return this.evaluateDiff(
-        nowMinutes - active.endMinutes,
-        active.endTime,
-      );
-    }
-
-    const justEnded = enriched
-      .filter(s => nowMinutes >= s.endMinutes)
-      .sort((a, b) => b.endMinutes - a.endMinutes)[0];
-
-    if (justEnded) {
-      return this.evaluateDiff(
-        nowMinutes - justEnded.endMinutes,
-        justEnded.endTime,
-      );
-    }
-
-    const upcoming = enriched
-      .filter(s => nowMinutes < s.startMinutes)
-      .sort((a, b) => a.startMinutes - b.startMinutes)[0];
-
-    if (upcoming) {
-      return this.evaluateDiff(
-        nowMinutes - upcoming.endMinutes,
-        upcoming.endTime,
-      );
-    }
-
+  if (!schedule) {
     return { status: 'NO_SHIFT' };
   }
+
+  const shiftsOfDay = schedule.shifts.filter(
+    s => s.weekday === weekday,
+  );
+
+  if (shiftsOfDay.length === 0) {
+    return { status: 'NO_SHIFT' };
+  }
+
+  const nowMinutes = date.getHours() * 60 + date.getMinutes();
+
+  const enriched = shiftsOfDay.map(s => ({
+    ...s,
+    startMinutes: this.timeToMinutes(s.startTime),
+    endMinutes: this.timeToMinutes(s.endTime),
+  }));
+
+  /* ============================
+     🔵 ENTRADA (IN)
+  ============================ */
+
+  if (type === RecordType.IN) {
+
+    const closest = enriched
+      .map(s => ({
+        shift: s,
+        diff: Math.abs(nowMinutes - s.startMinutes),
+      }))
+      .sort((a, b) => a.diff - b.diff)[0];
+
+    return this.evaluateDiff(
+      nowMinutes - closest.shift.startMinutes,
+      closest.shift.startTime,
+    );
+  }
+
+  /* ============================
+     🔴 SALIDA (OUT)
+  ============================ */
+
+  if (type === RecordType.OUT) {
+
+    const closest = enriched
+      .map(s => ({
+        shift: s,
+        diff: Math.abs(nowMinutes - s.endMinutes),
+      }))
+      .sort((a, b) => a.diff - b.diff)[0];
+
+    return this.evaluateDiff(
+      nowMinutes - closest.shift.endMinutes,
+      closest.shift.endTime,
+    );
+  }
+
+  return { status: 'NO_SHIFT' };
+}
 
   private evaluateDiff(
     diffMinutes: number,
