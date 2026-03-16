@@ -12,6 +12,7 @@ import { SchedulesModule } from './schedules/schedules.module';
 import { IncidentsModule } from './incidents/incidents.module';
 import { MobileModule } from './mobile/mobile.module'; // 👈 AÑADIDO
 import { DevicesModule } from './devices/devices.module';
+import { NotificationsModule } from './notifications/notifications.module';
 
 @Module({
   imports: [
@@ -28,6 +29,7 @@ import { DevicesModule } from './devices/devices.module';
     IncidentsModule,
     MobileModule, 
     DevicesModule,
+    NotificationsModule,
   ],
 })
 export class AppModule {}
