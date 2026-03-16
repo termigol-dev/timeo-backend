@@ -6,37 +6,23 @@ export class DevicesController {
   constructor(private devicesService: DevicesService) {}
 
   @Post('register')
-  async registerDevice(
-    @Body() body: { token: string; platform: 'WEB' | 'ANDROID' | 'IOS' },
-    @Req() req: any,
-  ) {
+async registerDevice(
+  @Body() body: { token: string; platform: 'WEB' | 'ANDROID' | 'IOS' },
+  @Req() req: any,
+) {
 
-    const authHeader = req.headers.authorization;
+  const userId = req.user.id;
 
-    if (!authHeader) {
-      throw new Error('Missing Authorization header');
-    }
+  console.log("DEVICE REGISTER REQUEST:");
+  console.log("USER:", userId);
+  console.log("TOKEN:", body.token);
 
-    const jwt = authHeader.split(' ')[1];
-
-    const payload = JSON.parse(
-      Buffer.from(jwt.split('.')[1], 'base64').toString()
-    );
-
-    const userId = payload.sub;
-
-    console.log('REGISTER DEVICE', {
-      userId,
-      token: body.token,
-      platform: body.platform
-    });
-
-    return this.devicesService.registerDevice(
-      userId,
-      body.token,
-      body.platform,
-    );
-  }
+  return this.devicesService.registerDevice(
+    userId,
+    body.token,
+    body.platform,
+  );
+}
 
   @Get('user/:userId')
   async getDevicesByUser(@Param('userId') userId: string) {
