@@ -11,7 +11,11 @@ export class DevicesController {
     @Req() req: any,
   ) {
     const userId = req.user.id;
-
+    console.log('REGISTER DEVICE', {
+      userId,
+      token: body.token,
+      platform: body.platform
+    });
     return this.devicesService.registerDevice(
       userId,
       body.token,
