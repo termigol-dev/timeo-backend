@@ -14,6 +14,7 @@ export class NotificationsService {
       process.env.VAPID_PUBLIC_KEY!,
       process.env.VAPID_PRIVATE_KEY!
     );
+
   }
 
   async sendToUser(userId: string, payload: any) {
@@ -24,17 +25,40 @@ export class NotificationsService {
 
       try {
 
+        // ignorar tokens antiguos (UUID)
+        if (!device.token.startsWith('{')) {
+
+          console.log('SKIPPING OLD DEVICE TOKEN', device.token);
+          continue;
+
+        }
+
+        const subscription = JSON.parse(device.token);
+
         await webPush.sendNotification(
-          JSON.parse(device.token),
+          subscription,
           JSON.stringify(payload)
         );
 
-      } catch (error) {
+        console.log('PUSH SENT');
 
-        console.log('Push error', error);
+      } catch (error: any) {
+
+        console.log('Push error', error?.statusCode);
+
+        // eliminar dispositivos caducados
+        if (error?.statusCode === 410 || error?.statusCode === 404) {
+
+          console.log('REMOVING INVALID DEVICE', device.id);
+
+          await this.devicesService.deleteDevice(device.id);
+
+        }
 
       }
 
     }
+
   }
+
 }

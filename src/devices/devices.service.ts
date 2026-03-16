@@ -3,7 +3,8 @@ import { PrismaService } from '../prisma/prisma.service';
 
 @Injectable()
 export class DevicesService {
-  constructor(private prisma: PrismaService) { }
+
+  constructor(private prisma: PrismaService) {}
 
   async registerDevice(
     userId: string,
@@ -11,40 +12,55 @@ export class DevicesService {
     platform: 'WEB' | 'ANDROID' | 'IOS',
   ) {
 
-    console.log('UPSERT DEVICE', {
+    console.log('REGISTER / UPSERT DEVICE', {
       userId,
-      token,
       platform,
+      tokenPreview: token?.substring(0, 40)
     });
 
     return this.prisma.device.upsert({
       where: {
-        token: token,
+        token: token
       },
       update: {
         userId: userId,
-        platform: platform,
+        platform: platform
       },
       create: {
         userId: userId,
         token: token,
-        platform: platform,
-      },
+        platform: platform
+      }
     });
+
   }
+
   async getDevicesByUser(userId: string) {
-    return this.prisma.device.findMany({
+
+    const devices = await this.prisma.device.findMany({
       where: { userId },
       select: {
         id: true,
         platform: true,
         token: true,
-        createdAt: true,
+        createdAt: true
       },
       orderBy: {
-        createdAt: 'desc',
-      },
+        createdAt: 'desc'
+      }
     });
+
+    console.log('DEVICES FOUND', devices.length);
+
+    return devices;
+  }
+
+  async deleteDevice(deviceId: string) {
+
+    return this.prisma.device.delete({
+      where: { id: deviceId }
+    });
+
   }
 
 }
