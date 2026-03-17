@@ -49,7 +49,7 @@ export class NotificationsService {
 
         await webPush.sendNotification(
           subscription,
-          JSON.stringify(payload) // 🔥 USAMOS EL PAYLOAD REAL
+          JSON.stringify(payload) // 👈 usa el que viene del controller
         );
 
         console.log('✅ PUSH SENT');
