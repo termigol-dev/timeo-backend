@@ -20,7 +20,7 @@ export class PunchService {
   ) { }
 
   /* ======================================================
-   🧪 SIMULADOR (NO ESCRIBE EN DB)
+   🧪 SIMULADOR (NO SE TOCA)
 ====================================================== */
 
   async simulateDay(body: {
@@ -32,21 +32,10 @@ export class PunchService {
     outTime?: string | null;
   }) {
 
-
     const { userId, companyId, branchId, date, inTime, outTime } = body;
-    console.log('🧪 SIMULATION INPUT:', {
-      userId,
-      companyId,
-      branchId,
-      date,
-      inTime,
-      outTime,
-    });
-    console.log('SIMULATION INPUT:', body);
 
     const results: any[] = [];
 
-    // Construimos eventos manualmente
     const events: { type: RecordType; createdAt: Date }[] = [];
 
     if (inTime) {
@@ -63,29 +52,16 @@ export class PunchService {
       });
     }
 
-    console.log('Generated events:', events);
-
     for (const event of events) {
 
-      console.log('Simulating event:', event);
-      console.log('🕒 Local hours check:', {
-        hours: event.createdAt.getHours(),
-        minutes: event.createdAt.getMinutes(),
-      });
-      console.log('➡️ About to evaluate:', {
-        userId,
-        branchId,
-        eventDate: event.createdAt,
-        type: event.type,
-      });
       const evaluation = await this.evaluateSchedule({
         userId,
         branchId,
         date: event.createdAt,
         type: event.type,
       });
-      console.log('📊 Evaluation result:', evaluation);
-      const incident = this.buildIncidentFromEvaluation({
+
+      const incident = this.handleIncidentFromEvaluation({
         evaluation,
         recordType: event.type,
         recordCreatedAt: event.createdAt,
@@ -105,6 +81,10 @@ export class PunchService {
       simulatedEvents: results,
     };
   }
+
+  /* ======================================================
+   🔥 PUNCH REAL (CORREGIDO)
+====================================================== */
 
   async punch(params: {
     userId: string;
@@ -133,21 +113,8 @@ export class PunchService {
     }
 
     /* ======================================================
-       🧪 DEBUG TIME (SOLO SI EXISTE VARIABLE ENV)
+       📝 1. CREAR RECORD
     ====================================================== */
-
-    const now = process.env.DEBUG_PUNCH_TIME
-      ? new Date(process.env.DEBUG_PUNCH_TIME)
-      : new Date();
-
-    /* ====================================================== */
-
-    const evaluation = await this.evaluateSchedule({
-      userId,
-      branchId,
-      date: now,
-      type,
-    });
 
     const record = await this.createRecord({
       type,
@@ -156,6 +123,27 @@ export class PunchService {
       branchId,
       membershipId: membership.id,
     });
+
+    /* ======================================================
+       🧠 2. EVALUAR CON HORA REAL
+    ====================================================== */
+
+    const evaluation = await this.evaluateSchedule({
+      userId,
+      branchId,
+      date: record.createdAt, // 🔥 CLAVE
+      type,
+    });
+
+    console.log('🧠 EVALUATION REAL:', {
+      type,
+      createdAt: record.createdAt,
+      evaluation,
+    });
+
+    /* ======================================================
+       🎯 3. CREAR INCIDENCIA
+    ====================================================== */
 
     await this.handleIncidentFromEvaluation({
       evaluation,
@@ -172,93 +160,83 @@ export class PunchService {
   }
 
   /* ======================================================
-     🧠 EVALUACIÓN DE HORARIO (NUEVA LÓGICA JERÁRQUICA)
+     🧠 EVALUACIÓN DE HORARIO
   ====================================================== */
 
- private async evaluateSchedule({
-  userId,
-  branchId,
-  date,
-  type,
-}: {
-  userId: string;
-  branchId: string;
-  date: Date;
-  type: RecordType;
-}): Promise<ScheduleEvaluation> {
+  private async evaluateSchedule({
+    userId,
+    branchId,
+    date,
+    type,
+  }: {
+    userId: string;
+    branchId: string;
+    date: Date;
+    type: RecordType;
+  }): Promise<ScheduleEvaluation> {
 
-  const weekday = date.getDay() === 0 ? 7 : date.getDay();
+    const weekday = date.getDay() === 0 ? 7 : date.getDay();
 
-  const schedule = await this.prisma.schedule.findFirst({
-    where: {
-      userId,
-      branchId,
-      validFrom: { lte: date },
-      OR: [{ validTo: null }, { validTo: { gte: date } }],
-    },
-    include: { shifts: true },
-  });
+    const schedule = await this.prisma.schedule.findFirst({
+      where: {
+        userId,
+        branchId,
+        validFrom: { lte: date },
+        OR: [{ validTo: null }, { validTo: { gte: date } }],
+      },
+      include: { shifts: true },
+    });
 
-  if (!schedule) {
+    if (!schedule) return { status: 'NO_SHIFT' };
+
+    const shiftsOfDay = schedule.shifts.filter(
+      s => s.weekday === weekday,
+    );
+
+    if (shiftsOfDay.length === 0) {
+      return { status: 'NO_SHIFT' };
+    }
+
+    const nowMinutes = date.getHours() * 60 + date.getMinutes();
+
+    const enriched = shiftsOfDay.map(s => ({
+      ...s,
+      startMinutes: this.timeToMinutes(s.startTime),
+      endMinutes: this.timeToMinutes(s.endTime),
+    }));
+
+    if (type === RecordType.IN) {
+
+      const closest = enriched
+        .map(s => ({
+          shift: s,
+          diff: Math.abs(nowMinutes - s.startMinutes),
+        }))
+        .sort((a, b) => a.diff - b.diff)[0];
+
+      return this.evaluateDiff(
+        nowMinutes - closest.shift.startMinutes,
+        closest.shift.startTime,
+      );
+    }
+
+    if (type === RecordType.OUT) {
+
+      const closest = enriched
+        .map(s => ({
+          shift: s,
+          diff: Math.abs(nowMinutes - s.endMinutes),
+        }))
+        .sort((a, b) => a.diff - b.diff)[0];
+
+      return this.evaluateDiff(
+        nowMinutes - closest.shift.endMinutes,
+        closest.shift.endTime,
+      );
+    }
+
     return { status: 'NO_SHIFT' };
   }
-
-  const shiftsOfDay = schedule.shifts.filter(
-    s => s.weekday === weekday,
-  );
-
-  if (shiftsOfDay.length === 0) {
-    return { status: 'NO_SHIFT' };
-  }
-
-  const nowMinutes = date.getHours() * 60 + date.getMinutes();
-
-  const enriched = shiftsOfDay.map(s => ({
-    ...s,
-    startMinutes: this.timeToMinutes(s.startTime),
-    endMinutes: this.timeToMinutes(s.endTime),
-  }));
-
-  /* ============================
-     🔵 ENTRADA (IN)
-  ============================ */
-
-  if (type === RecordType.IN) {
-
-    const closest = enriched
-      .map(s => ({
-        shift: s,
-        diff: Math.abs(nowMinutes - s.startMinutes),
-      }))
-      .sort((a, b) => a.diff - b.diff)[0];
-
-    return this.evaluateDiff(
-      nowMinutes - closest.shift.startMinutes,
-      closest.shift.startTime,
-    );
-  }
-
-  /* ============================
-     🔴 SALIDA (OUT)
-  ============================ */
-
-  if (type === RecordType.OUT) {
-
-    const closest = enriched
-      .map(s => ({
-        shift: s,
-        diff: Math.abs(nowMinutes - s.endMinutes),
-      }))
-      .sort((a, b) => a.diff - b.diff)[0];
-
-    return this.evaluateDiff(
-      nowMinutes - closest.shift.endMinutes,
-      closest.shift.endTime,
-    );
-  }
-
-  return { status: 'NO_SHIFT' };
-}
 
   private evaluateDiff(
     diffMinutes: number,
@@ -270,18 +248,10 @@ export class PunchService {
     }
 
     if (diffMinutes < -15) {
-      return {
-        status: 'EARLY',
-        expectedTime,
-        diffMinutes,
-      };
+      return { status: 'EARLY', expectedTime, diffMinutes };
     }
 
-    return {
-      status: 'LATE',
-      expectedTime,
-      diffMinutes,
-    };
+    return { status: 'LATE', expectedTime, diffMinutes };
   }
 
   /* ======================================================
@@ -297,40 +267,28 @@ export class PunchService {
     membershipId,
     companyId,
     branchId,
-  }: {
-    evaluation: ScheduleEvaluation;
-    recordType: RecordType;
-    recordId: string;
-    recordCreatedAt: Date;
-    userId: string;
-    membershipId: string;
-    companyId: string;
-    branchId: string;
-  }) {
+  }: any) {
 
     if (evaluation.status === 'OK') return;
 
     let type: IncidentType | null = null;
 
     if (evaluation.status === 'NO_SHIFT') {
-      type =
-        recordType === RecordType.IN
-          ? IncidentType.FORGOT_IN
-          : IncidentType.FORGOT_OUT;
+      type = recordType === RecordType.IN
+        ? IncidentType.FORGOT_IN
+        : IncidentType.FORGOT_OUT;
     }
 
     if (evaluation.status === 'EARLY') {
-      type =
-        recordType === RecordType.IN
-          ? IncidentType.IN_EARLY
-          : IncidentType.OUT_EARLY;
+      type = recordType === RecordType.IN
+        ? IncidentType.IN_EARLY
+        : IncidentType.OUT_EARLY;
     }
 
     if (evaluation.status === 'LATE') {
-      type =
-        recordType === RecordType.IN
-          ? IncidentType.IN_LATE
-          : IncidentType.OUT_LATE;
+      type = recordType === RecordType.IN
+        ? IncidentType.IN_LATE
+        : IncidentType.OUT_LATE;
     }
 
     if (!type) return;
@@ -347,76 +305,13 @@ export class PunchService {
         recordId,
         occurredAt: recordCreatedAt,
         expectedAt: evaluation.expectedTime
-          ? this.buildExpectedDate(
-            recordCreatedAt,
-            evaluation.expectedTime,
-          )
+          ? this.buildExpectedDate(recordCreatedAt, evaluation.expectedTime)
           : null,
       },
     });
   }
 
-  /* ======================================================
-   🎯 CONSTRUCCIÓN DE INCIDENCIA (SIN DB)
-====================================================== */
-
-  private buildIncidentFromEvaluation({
-    evaluation,
-    recordType,
-    recordCreatedAt,
-    userId,
-    companyId,
-    branchId,
-  }: {
-    evaluation: ScheduleEvaluation;
-    recordType: RecordType;
-    recordCreatedAt: Date;
-    userId: string;
-    companyId: string;
-    branchId: string;
-  }) {
-
-    if (evaluation.status === 'OK') return null;
-
-    let type: IncidentType | null = null;
-
-    if (evaluation.status === 'NO_SHIFT') {
-      type =
-        recordType === RecordType.IN
-          ? IncidentType.FORGOT_IN
-          : IncidentType.FORGOT_OUT;
-    }
-
-    if (evaluation.status === 'EARLY') {
-      type =
-        recordType === RecordType.IN
-          ? IncidentType.IN_EARLY
-          : IncidentType.OUT_EARLY;
-    }
-    if (evaluation.status === 'LATE') {
-      type =
-        recordType === RecordType.IN
-          ? IncidentType.IN_LATE
-          : IncidentType.OUT_LATE;
-    }
-
-    if (!type) return null;
-
-    return {
-      type,
-      userId,
-      companyId,
-      branchId,
-      occurredAt: recordCreatedAt,
-      expectedAt: evaluation.expectedTime
-        ? this.buildExpectedDate(
-          recordCreatedAt,
-          evaluation.expectedTime,
-        )
-        : null,
-      diffMinutes: evaluation.diffMinutes ?? null,
-    };
-  }
+  /* ====================================================== */
 
   private buildExpectedDate(baseDate: Date, time: string) {
     const [h, m] = time.split(':').map(Number);
@@ -433,64 +328,36 @@ export class PunchService {
   private buildLocalDate(date: string, time: string) {
     const [year, month, day] = date.split('-').map(Number);
     const [h, m] = time.split(':').map(Number);
-
     return new Date(year, month - 1, day, h, m, 0, 0);
   }
 
-  /* ======================================================
-     HELPERS
-  ====================================================== */
-
-
-  private async getActiveMembership(
-    userId: string,
-    companyId: string,
-    branchId: string,
-  ) {
-
+  private async getActiveMembership(userId: string, companyId: string, branchId: string) {
     const membership = await this.prisma.membership.findFirst({
-      where: {
-        userId,
-        companyId,
-        branchId,
-        active: true,
-      },
+      where: { userId, companyId, branchId, active: true },
     });
 
     if (!membership) {
-      throw new BadRequestException(
-        'Usuario no pertenece a esta sucursal',
-      );
+      throw new BadRequestException('Usuario no pertenece a esta sucursal');
     }
 
     return membership;
   }
 
   private async getLastRecord(membershipId: string) {
-
     return this.prisma.record.findFirst({
       where: { membershipId },
       orderBy: { createdAt: 'desc' },
     });
   }
 
-  private async createRecord(data: {
-    type: RecordType;
-    userId: string;
-    companyId: string;
-    branchId: string;
-    membershipId: string;
-  }) {
-
+  private async createRecord(data: any) {
     return this.prisma.record.create({
       data: {
         type: data.type,
         user: { connect: { id: data.userId } },
         company: { connect: { id: data.companyId } },
         branch: { connect: { id: data.branchId } },
-        membership: {
-          connect: { id: data.membershipId },
-        },
+        membership: { connect: { id: data.membershipId } },
       },
     });
   }
