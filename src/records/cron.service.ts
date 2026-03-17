@@ -16,7 +16,7 @@ export class CronService {
   /* ======================================================
      ⏱ CRON TEST (cada minuto temporal)
   ====================================================== */
-
+/*
   @Cron('* * * * *')
   async checkForgotIn() {
 
@@ -126,5 +126,5 @@ export class CronService {
     }
 
     console.log('🧠 CRON END');
-  }
+  }*/
 }
