@@ -19,49 +19,56 @@ export class NotificationsService {
 
   async sendToUser(userId: string, payload: any) {
 
+    console.log('📨 SEND PUSH TO USER:', userId);
+    console.log('📦 PAYLOAD:', payload);
+
     const devices = await this.devicesService.getDevicesByUser(userId);
+
+    console.log('📱 DEVICES FOUND:', devices.length);
 
     for (const device of devices) {
 
       try {
 
-        // ignorar tokens antiguos (UUID)
+        // 🔥 ignorar tokens antiguos (UUID)
         if (!device.token.startsWith('{')) {
-
-          console.log('SKIPPING OLD DEVICE TOKEN', device.token);
+          console.log('⚠️ SKIPPING OLD DEVICE TOKEN', device.token);
           continue;
-
         }
 
-        const subscription = JSON.parse(device.token);
+        let subscription;
+
+        try {
+          subscription = JSON.parse(device.token);
+        } catch (e) {
+          console.log('❌ INVALID JSON TOKEN', device.token);
+          continue;
+        }
+
+        console.log('🚀 SENDING TO:', subscription.endpoint?.slice(0, 50));
 
         await webPush.sendNotification(
-          JSON.parse(device.token),
-          JSON.stringify({
-            title: "TIMEO TEST",
-            body: "Mensaje real funcionando"
-          })
+          subscription,
+          JSON.stringify(payload) // 🔥 USAMOS EL PAYLOAD REAL
         );
 
-        console.log('PUSH SENT');
+        console.log('✅ PUSH SENT');
 
       } catch (error: any) {
 
-        console.log('Push error', error?.statusCode);
+        console.log('❌ PUSH ERROR:', error?.statusCode);
 
-        // eliminar dispositivos caducados
+        // 🔥 limpiar dispositivos muertos
         if (error?.statusCode === 410 || error?.statusCode === 404) {
-
-          console.log('REMOVING INVALID DEVICE', device.id);
-
+          console.log('🧹 REMOVING INVALID DEVICE', device.id);
           await this.devicesService.deleteDevice(device.id);
-
         }
-
       }
-
     }
-
   }
 
+  // 👉 helper para usar luego fácil
+  async notify(userId: string, title: string, body: string) {
+    return this.sendToUser(userId, { title, body });
+  }
 }

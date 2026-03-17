@@ -1,4 +1,4 @@
-import { Controller, Post, Param, Get } from '@nestjs/common';
+import { Controller, Get, Param } from '@nestjs/common';
 import { NotificationsService } from './notifications.service';
 
 @Controller('notifications')
@@ -10,11 +10,10 @@ export class NotificationsController {
   async testPush(@Param('userId') userId: string) {
 
     await this.notificationsService.sendToUser(userId, {
-      title: "Timeo",
-      body: "Esto es una notificación de prueba"
+      title: 'TIMEO',
+      body: 'Esto es una notificación real 👊',
     });
 
     return { ok: true };
   }
-
 }
