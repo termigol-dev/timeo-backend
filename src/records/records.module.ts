@@ -7,9 +7,10 @@ import { PunchService } from './punch.service';
 import { SimulateController } from './simulate.controller';
 import { SimulateService } from './simulate.service';
 import { CronService } from './cron.service';
+import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule,IncidentsModule],
+  imports: [PrismaModule,IncidentsModule,NotificationsModule],
   controllers: [RecordsController,SimulateController],
   providers: [RecordsService,PunchService,SimulateService,CronService],
   exports: [PunchService],   // 👈 ESTO ES LO IMPORTANTE
