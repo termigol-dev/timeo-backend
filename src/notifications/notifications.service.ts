@@ -38,11 +38,8 @@ export class NotificationsService {
         await webPush.sendNotification(
           JSON.parse(device.token),
           JSON.stringify({
-            notification: {
-              title: payload.title || 'Timeo',
-              body: payload.body || 'Nueva notificación',
-              icon: '/icon-192.png'
-            }
+            title: "TIMEO TEST",
+            body: "Mensaje real funcionando"
           })
         );
 
