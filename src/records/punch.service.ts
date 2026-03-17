@@ -7,7 +7,7 @@ import {
 } from '@prisma/client';
 
 type ScheduleEvaluation = {
-  status: 'OK' | 'EARLY' | 'LATE' | 'NO_SHIFT';
+  status: 'OK' | 'EARLY' | 'LATE';
   expectedTime?: string;
   diffMinutes?: number;
 };
@@ -17,11 +17,11 @@ export class PunchService {
 
   constructor(
     private readonly prisma: PrismaService,
-  ) { }
+  ) {}
 
   /* ======================================================
    🧪 SIMULADOR (NO SE TOCA)
-====================================================== */
+  ====================================================== */
 
   async simulateDay(body: {
     userId: string;
@@ -83,8 +83,8 @@ export class PunchService {
   }
 
   /* ======================================================
-   🔥 PUNCH REAL (CORREGIDO)
-====================================================== */
+   🔥 PUNCH REAL
+  ====================================================== */
 
   async punch(params: {
     userId: string;
@@ -112,10 +112,7 @@ export class PunchService {
       throw new BadRequestException('No active IN');
     }
 
-    /* ======================================================
-       📝 1. CREAR RECORD
-    ====================================================== */
-
+    // 📝 1. CREAR RECORD
     const record = await this.createRecord({
       type,
       userId,
@@ -124,27 +121,21 @@ export class PunchService {
       membershipId: membership.id,
     });
 
-    /* ======================================================
-       🧠 2. EVALUAR CON HORA REAL
-    ====================================================== */
-
+    // 🧠 2. EVALUAR
     const evaluation = await this.evaluateSchedule({
       userId,
       branchId,
-      date: record.createdAt, // 🔥 CLAVE
+      date: record.createdAt,
       type,
     });
 
-    console.log('🧠 EVALUATION REAL:', {
+    console.log('🧠 EVALUATION:', {
       type,
       createdAt: record.createdAt,
       evaluation,
     });
 
-    /* ======================================================
-       🎯 3. CREAR INCIDENCIA
-    ====================================================== */
-
+    // 🎯 3. CREAR INCIDENCIA
     await this.handleIncidentFromEvaluation({
       evaluation,
       recordType: type,
@@ -160,7 +151,7 @@ export class PunchService {
   }
 
   /* ======================================================
-     🧠 EVALUACIÓN DE HORARIO
+   🧠 EVALUACIÓN
   ====================================================== */
 
   private async evaluateSchedule({
@@ -187,17 +178,26 @@ export class PunchService {
       include: { shifts: true },
     });
 
-    if (!schedule) return { status: 'NO_SHIFT' };
+    const nowMinutes = date.getHours() * 60 + date.getMinutes();
+
+    // ❗️ SI NO HAY HORARIO → LO TRATAMOS COMO EARLY
+    if (!schedule) {
+      return {
+        status: 'EARLY',
+        diffMinutes: -999,
+      };
+    }
 
     const shiftsOfDay = schedule.shifts.filter(
       s => s.weekday === weekday,
     );
 
     if (shiftsOfDay.length === 0) {
-      return { status: 'NO_SHIFT' };
+      return {
+        status: 'EARLY',
+        diffMinutes: -999,
+      };
     }
-
-    const nowMinutes = date.getHours() * 60 + date.getMinutes();
 
     const enriched = shiftsOfDay.map(s => ({
       ...s,
@@ -235,12 +235,12 @@ export class PunchService {
       );
     }
 
-    return { status: 'NO_SHIFT' };
+    return { status: 'EARLY' };
   }
 
   private evaluateDiff(
     diffMinutes: number,
-    expectedTime: string,
+    expectedTime?: string,
   ): ScheduleEvaluation {
 
     if (Math.abs(diffMinutes) <= 15) {
@@ -255,7 +255,7 @@ export class PunchService {
   }
 
   /* ======================================================
-     🎯 INCIDENCIAS
+   🎯 INCIDENCIAS
   ====================================================== */
 
   private async handleIncidentFromEvaluation({
@@ -273,22 +273,18 @@ export class PunchService {
 
     let type: IncidentType | null = null;
 
-    if (evaluation.status === 'NO_SHIFT') {
-      type = recordType === RecordType.IN
-        ? IncidentType.FORGOT_IN
-        : IncidentType.FORGOT_OUT;
-    }
-
     if (evaluation.status === 'EARLY') {
-      type = recordType === RecordType.IN
-        ? IncidentType.IN_EARLY
-        : IncidentType.OUT_EARLY;
+      type =
+        recordType === RecordType.IN
+          ? IncidentType.IN_EARLY
+          : IncidentType.OUT_EARLY;
     }
 
     if (evaluation.status === 'LATE') {
-      type = recordType === RecordType.IN
-        ? IncidentType.IN_LATE
-        : IncidentType.OUT_LATE;
+      type =
+        recordType === RecordType.IN
+          ? IncidentType.IN_LATE
+          : IncidentType.OUT_LATE;
     }
 
     if (!type) return;
