@@ -17,7 +17,7 @@ export class PunchService {
 
   constructor(
     private readonly prisma: PrismaService,
-  ) {}
+  ) { }
 
   /* ======================================================
    🧪 SIMULADOR (NO SE TOCA)
@@ -155,88 +155,119 @@ export class PunchService {
   ====================================================== */
 
   private async evaluateSchedule({
-    userId,
-    branchId,
-    date,
-    type,
-  }: {
-    userId: string;
-    branchId: string;
-    date: Date;
-    type: RecordType;
-  }): Promise<ScheduleEvaluation> {
+  userId,
+  branchId,
+  date,
+  type,
+}: {
+  userId: string;
+  branchId: string;
+  date: Date;
+  type: RecordType;
+}): Promise<ScheduleEvaluation> {
 
-    const weekday = date.getDay() === 0 ? 7 : date.getDay();
+  const weekday = date.getDay() === 0 ? 7 : date.getDay();
 
-    const schedule = await this.prisma.schedule.findFirst({
-      where: {
-        userId,
-        branchId,
-        validFrom: { lte: date },
-        OR: [{ validTo: null }, { validTo: { gte: date } }],
-      },
-      include: { shifts: true },
-    });
+  const schedule = await this.prisma.schedule.findFirst({
+    where: {
+      userId,
+      branchId,
+      validFrom: { lte: date },
+      OR: [{ validTo: null }, { validTo: { gte: date } }],
+    },
+    include: { shifts: true },
+  });
 
-    const nowMinutes = date.getHours() * 60 + date.getMinutes();
+  // 🔥 AJUSTE HORARIO ESPAÑA
+  const localDate = new Date(date.getTime() + 60 * 60 * 1000);
+  const nowMinutes = localDate.getHours() * 60 + localDate.getMinutes();
 
-    // ❗️ SI NO HAY HORARIO → LO TRATAMOS COMO EARLY
-    if (!schedule) {
-      return {
-        status: 'EARLY',
-        diffMinutes: -999,
-      };
-    }
-
-    const shiftsOfDay = schedule.shifts.filter(
-      s => s.weekday === weekday,
-    );
-
-    if (shiftsOfDay.length === 0) {
-      return {
-        status: 'EARLY',
-        diffMinutes: -999,
-      };
-    }
-
-    const enriched = shiftsOfDay.map(s => ({
-      ...s,
-      startMinutes: this.timeToMinutes(s.startTime),
-      endMinutes: this.timeToMinutes(s.endTime),
-    }));
-
-    if (type === RecordType.IN) {
-
-      const closest = enriched
-        .map(s => ({
-          shift: s,
-          diff: Math.abs(nowMinutes - s.startMinutes),
-        }))
-        .sort((a, b) => a.diff - b.diff)[0];
-
-      return this.evaluateDiff(
-        nowMinutes - closest.shift.startMinutes,
-        closest.shift.startTime,
-      );
-    }
-
-    if (type === RecordType.OUT) {
-
-      const closest = enriched
-        .map(s => ({
-          shift: s,
-          diff: Math.abs(nowMinutes - s.endMinutes),
-        }))
-        .sort((a, b) => a.diff - b.diff)[0];
-
-      return this.evaluateDiff(
-        nowMinutes - closest.shift.endMinutes,
-        closest.shift.endTime,
-      );
-    }
-
-    return { status: 'EARLY' };
+  // ❗️ SIN HORARIO → IN_EARLY / OUT_EARLY (tu regla)
+  if (!schedule) {
+    return {
+      status: 'EARLY',
+      diffMinutes: -999,
+    };
   }
+
+  const shiftsOfDay = schedule.shifts.filter(
+    s => s.weekday === weekday,
+  );
+
+  if (shiftsOfDay.length === 0) {
+    return {
+      status: 'EARLY',
+      diffMinutes: -999,
+    };
+  }
+
+  const enriched = shiftsOfDay.map(s => ({
+    ...s,
+    startMinutes: this.timeToMinutes(s.startTime),
+    endMinutes: this.timeToMinutes(s.endTime),
+  }));
+
+  // 🔥 CLAVE: detectar turno en vigor
+  const activeShift = enriched.find(
+    s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes
+  );
+
+  /* ============================
+     🟦 IN
+  ============================ */
+  if (type === RecordType.IN) {
+
+    // ✅ PRIORIDAD: turno activo
+    if (activeShift) {
+      return this.evaluateDiff(
+        nowMinutes - activeShift.startMinutes,
+        activeShift.startTime,
+      );
+    }
+
+    // 👉 si no → el más cercano por START
+    const closest = enriched
+      .map(s => ({
+        shift: s,
+        diff: Math.abs(nowMinutes - s.startMinutes),
+      }))
+      .sort((a, b) => a.diff - b.diff)[0];
+
+    return this.evaluateDiff(
+      nowMinutes - closest.shift.startMinutes,
+      closest.shift.startTime,
+    );
+  }
+
+  /* ============================
+     🟥 OUT
+  ============================ */
+  if (type === RecordType.OUT) {
+
+    // ✅ PRIORIDAD: turno activo
+    if (activeShift) {
+      return this.evaluateDiff(
+        nowMinutes - activeShift.endMinutes,
+        activeShift.endTime,
+      );
+    }
+
+    // 👉 si no → el más cercano por END
+    const closest = enriched
+      .map(s => ({
+        shift: s,
+        diff: Math.abs(nowMinutes - s.endMinutes),
+      }))
+      .sort((a, b) => a.diff - b.diff)[0];
+
+    return this.evaluateDiff(
+      nowMinutes - closest.shift.endMinutes,
+      closest.shift.endTime,
+    );
+  }
+
+  return { status: 'EARLY' };
+}
 
   private evaluateDiff(
     diffMinutes: number,
