@@ -36,8 +36,14 @@ export class NotificationsService {
         const subscription = JSON.parse(device.token);
 
         await webPush.sendNotification(
-          subscription,
-          JSON.stringify(payload)
+          JSON.parse(device.token),
+          JSON.stringify({
+            notification: {
+              title: payload.title || 'Timeo',
+              body: payload.body || 'Nueva notificación',
+              icon: '/icon-192.png'
+            }
+          })
         );
 
         console.log('PUSH SENT');
