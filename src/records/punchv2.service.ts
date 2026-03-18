@@ -151,7 +151,7 @@ export class Punch2Service {
         type: RecordType;
     }): Promise<IncidentType | null> {
 
-        console.log("🧠 EVALUATE V2 FINAL", { type, date: date.toISOString() });
+        console.log("🧠 EVALUATE V2 SUPER FINAL", { type, date: date.toISOString() });
 
         const schedule = await this.prisma.schedule.findFirst({
             where: {
@@ -223,7 +223,7 @@ export class Punch2Service {
         }
 
         /* ============================
-           🟥 OUT
+           🟥 OUT (SIMPLE Y CORRECTO)
         ============================ */
         if (type === RecordType.OUT) {
 
@@ -250,40 +250,54 @@ export class Punch2Service {
                 type: RecordType.IN,
             });
 
+            // 🔥 REGLA CLAVE TUYA
             if (inIncident === IncidentType.IN_EARLY) {
-                console.log("📊 OUT ignorado (IN_EARLY)");
+                console.log("📊 OUT ignorado (IN sin turno)");
                 return null;
             }
 
-            const lastInWeekday = lastIn.createdAt.getDay() === 0 ? 7 : lastIn.createdAt.getDay();
+            // 👉 calcular momento del IN en minutos de semana
+            const inWeekday = lastIn.createdAt.getDay() === 0 ? 7 : lastIn.createdAt.getDay();
 
-            const lastInMinutes =
-                lastInWeekday * 1440 +
+            const inMinutes =
+                inWeekday * 1440 +
                 lastIn.createdAt.getHours() * 60 +
                 lastIn.createdAt.getMinutes();
 
-            const shift = shifts
-                .map(s => ({
-                    shift: s,
-                    abs: Math.abs(lastInMinutes - s.start),
-                }))
-                .sort((a, b) => a.abs - b.abs)[0]?.shift;
+            // 👉 reconstruir turnos SIN mover semanas
+            const shifts = schedule.shifts.map(s => ({
+                ...s,
+                start: s.weekday * 1440 + this.timeToMinutes(s.startTime),
+                end: s.weekday * 1440 + this.timeToMinutes(s.endTime),
+            }));
+
+            // 👉 encontrar turno del IN
+            const shift = shifts.find(
+                s => inMinutes >= s.start && inMinutes <= s.end
+            );
 
             if (!shift) {
-                console.log("📊 OUT sin turno → null");
+                console.log("📊 OUT sin turno asociado → null");
                 return null;
             }
 
-            const diff = now - shift.end;
+            // 👉 ahora sí: diferencia REAL
+            const nowWeekday = date.getDay() === 0 ? 7 : date.getDay();
 
-            console.log("📊 OUT diff:", diff);
+            const nowMinutes =
+                nowWeekday * 1440 +
+                date.getHours() * 60 +
+                date.getMinutes();
+
+            const diff = nowMinutes - shift.end;
+
+            console.log("📊 OUT diff REAL:", diff);
 
             if (diff < -15) return IncidentType.OUT_EARLY;
             if (diff > 15) return IncidentType.OUT_LATE;
 
             return null;
         }
-
         return null;
     }
 
