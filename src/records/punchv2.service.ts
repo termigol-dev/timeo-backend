@@ -25,7 +25,7 @@ export class Punch2Service {
     inTime?: string | null;
     outTime?: string | null;
   }) {
-
+    console.log("USANDO PUNCH V2");
     const { userId, companyId, branchId, date, inTime, outTime } = body;
 
     const results: any[] = [];

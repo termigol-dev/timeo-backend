@@ -13,6 +13,6 @@ import { NotificationsModule } from '../notifications/notifications.module';
   imports: [PrismaModule,IncidentsModule,NotificationsModule],
   controllers: [RecordsController,SimulateController],
   providers: [RecordsService,PunchService,Punch2Service,CronService],
-  exports: [PunchService],   // 👈 ESTO ES LO IMPORTANTE
+  exports: [PunchService,Punch2Service],   // 👈 ESTO ES LO IMPORTANTE
 })
 export class RecordsModule {}
