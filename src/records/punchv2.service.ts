@@ -26,7 +26,7 @@ export class Punch2Service {
         outTime?: string | null;
     }) {
 
-        console.log("🧪 USANDO PUNCH V2");
+        console.log("🧪 USANDO PUNCH FINAL V2");
 
         const { userId, branchId, date, inTime, outTime } = body;
 
