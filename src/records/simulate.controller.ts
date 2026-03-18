@@ -1,10 +1,10 @@
 import { Controller, Post, Body, ForbiddenException } from '@nestjs/common';
-import { PunchService } from './punch.service';
+import { Punch2Service } from './punchv2.service';
 
 @Controller('admin/dev')
 export class SimulateController {
 
-  constructor(private readonly punchService: PunchService) {}
+  constructor(private readonly punchService: Punch2Service) {}
 
   @Post('simulate')
   async simulate(@Body() body: any) {
