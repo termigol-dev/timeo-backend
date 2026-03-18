@@ -14,7 +14,7 @@ export class Punch2Service {
   ) { }
 
   /* ======================================================
-   🧪 SIMULADOR (NO GUARDA EN BD)
+   🧪 SIMULADOR
   ====================================================== */
 
   async simulateDay(body: {
@@ -26,9 +26,9 @@ export class Punch2Service {
     outTime?: string | null;
   }) {
 
-    console.log("USANDO PUNCH V2");
+    console.log("🧪 USANDO PUNCH V2");
 
-    const { userId, companyId, branchId, date, inTime, outTime } = body;
+    const { userId, branchId, date, inTime, outTime } = body;
 
     const results: any[] = [];
 
@@ -98,7 +98,7 @@ export class Punch2Service {
       throw new BadRequestException('No active IN');
     }
 
-    // 📝 1. CREAR RECORD
+    // 📝 CREAR RECORD
     const record = await this.createRecord({
       type,
       userId,
@@ -107,7 +107,7 @@ export class Punch2Service {
       membershipId: membership.id,
     });
 
-    // 🧠 2. EVALUAR
+    // 🧠 EVALUAR
     const incidentType = await this.evaluateSchedule({
       userId,
       branchId,
@@ -115,7 +115,7 @@ export class Punch2Service {
       type,
     });
 
-    // 🎯 3. CREAR INCIDENCIA
+    // 🎯 CREAR INCIDENCIA
     if (incidentType) {
       await this.prisma.incident.create({
         data: {
@@ -136,7 +136,7 @@ export class Punch2Service {
   }
 
   /* ======================================================
-   🧠 EVALUACIÓN (CORREGIDA)
+   🧠 EVALUACIÓN FINAL (IN + OUT CON CONTEXTO)
   ====================================================== */
 
   private async evaluateSchedule({
@@ -151,7 +151,7 @@ export class Punch2Service {
     type: RecordType;
   }): Promise<IncidentType | null> {
 
-    const weekday = date.getDay() === 0 ? 7 : date.getDay();
+    console.log("🧠 EVALUATE V2", { type, date: date.toISOString() });
 
     const schedule = await this.prisma.schedule.findFirst({
       where: {
@@ -163,83 +163,96 @@ export class Punch2Service {
       include: { shifts: true },
     });
 
-    // 🕐 ajuste España
     const localDate = new Date(date.getTime() + 60 * 60 * 1000);
     const nowMinutes = localDate.getHours() * 60 + localDate.getMinutes();
 
-    // ❌ SIN HORARIO → regla clara
     if (!schedule) {
-      return type === RecordType.IN
-        ? IncidentType.IN_EARLY
-        : null; // 👈 OUT sin turno = nada
+      const result = type === RecordType.IN ? IncidentType.IN_EARLY : null;
+      console.log("📊 RESULT (NO SCHEDULE):", result);
+      return result;
     }
 
-    const shiftsOfDay = schedule.shifts.filter(
-      s => s.weekday === weekday,
-    );
-
-    // ❌ SIN TURNO ESE DÍA
-    if (shiftsOfDay.length === 0) {
-      return type === RecordType.IN
-        ? IncidentType.IN_EARLY
-        : null; // 👈 clave
-    }
-
-    const enriched = shiftsOfDay.map(s => ({
+    const shifts = schedule.shifts.map(s => ({
       ...s,
       startMinutes: this.timeToMinutes(s.startTime),
       endMinutes: this.timeToMinutes(s.endTime),
     }));
-
-    const activeShift = enriched.find(
-      s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes
-    );
 
     /* ============================
        🟦 IN
     ============================ */
     if (type === RecordType.IN) {
 
-      let targetShift;
+      const activeShift = shifts.find(
+        s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes
+      );
 
       if (activeShift) {
-        targetShift = activeShift;
-      } else {
-        targetShift = enriched
-          .map(s => ({
-            shift: s,
-            diff: Math.abs(nowMinutes - s.startMinutes),
-          }))
-          .sort((a, b) => a.diff - b.diff)[0].shift;
+        const diff = nowMinutes - activeShift.startMinutes;
+
+        if (diff < -15) return IncidentType.IN_EARLY;
+        if (diff > 15) return IncidentType.IN_LATE;
+
+        return null;
       }
 
-      const diff = nowMinutes - targetShift.startMinutes;
+      const upcomingShift = shifts.find(s => {
+        const diff = s.startMinutes - nowMinutes;
+        return diff >= 0 && diff <= 15;
+      });
 
-      if (diff < -15) return IncidentType.IN_EARLY;
-      if (diff > 15) return IncidentType.IN_LATE;
+      if (upcomingShift) return null;
 
-      return null;
+      return IncidentType.IN_EARLY;
     }
 
     /* ============================
-       🟥 OUT
+       🟥 OUT (DEPENDIENTE DEL IN)
     ============================ */
     if (type === RecordType.OUT) {
 
-      let targetShift;
+      const lastIn = await this.prisma.record.findFirst({
+        where: {
+          userId,
+          branchId,
+          type: RecordType.IN,
+          createdAt: { lte: date },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
 
-      if (activeShift) {
-        targetShift = activeShift;
-      } else {
-        targetShift = enriched
-          .map(s => ({
-            shift: s,
-            diff: Math.abs(nowMinutes - s.endMinutes),
-          }))
-          .sort((a, b) => a.diff - b.diff)[0].shift;
+      if (!lastIn) {
+        console.log("📊 OUT sin IN previo → null");
+        return null;
       }
 
-      const diff = nowMinutes - targetShift.endMinutes;
+      // 👉 evaluar cómo fue ese IN
+      const inIncident = await this.evaluateSchedule({
+        userId,
+        branchId,
+        date: lastIn.createdAt,
+        type: RecordType.IN,
+      });
+
+      // ❌ IN fuera de turno → NO generar OUT
+      if (inIncident === IncidentType.IN_EARLY) {
+        console.log("📊 OUT ignorado (IN_EARLY previo)");
+        return null;
+      }
+
+      const lastInDate = new Date(lastIn.createdAt.getTime() + 60 * 60 * 1000);
+      const lastInMinutes = lastInDate.getHours() * 60 + lastInDate.getMinutes();
+
+      const shift = shifts.find(
+        s => lastInMinutes >= s.startMinutes && lastInMinutes <= s.endMinutes
+      );
+
+      if (!shift) {
+        console.log("📊 OUT sin turno asociado → null");
+        return null;
+      }
+
+      const diff = nowMinutes - shift.endMinutes;
 
       if (diff < -15) return IncidentType.OUT_EARLY;
       if (diff > 15) return IncidentType.OUT_LATE;
