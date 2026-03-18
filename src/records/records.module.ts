@@ -10,9 +10,20 @@ import { CronService } from './cron.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
-  imports: [PrismaModule,IncidentsModule,NotificationsModule],
-  controllers: [RecordsController,SimulateController],
-  providers: [RecordsService,PunchService,Punch2Service,CronService],
-  exports: [PunchService,Punch2Service],   // 👈 ESTO ES LO IMPORTANTE
+  imports: [PrismaModule, IncidentsModule, NotificationsModule],
+  controllers: [RecordsController, SimulateController],
+  providers: [
+    RecordsService,
+    PunchService,
+    {
+      provide: 'PUNCH_V2',       // 👈 TOKEN NUEVO
+      useClass: Punch2Service,  // 👈 PUNCH2 CONTROLADO
+    },
+    CronService,
+  ],
+  exports: [
+    PunchService,
+    'PUNCH_V2',                 // 👈 EXPORTAMOS EL TOKEN
+  ],
 })
 export class RecordsModule {}
