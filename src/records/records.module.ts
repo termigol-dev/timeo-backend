@@ -4,13 +4,12 @@ import { RecordsController } from './records.controller';
 import { PrismaModule } from '../prisma/prisma.module';
 import { IncidentsModule } from '../incidents/incidents.module';
 import { PunchService } from './punch.service';
-import { SimulateController } from './simulate.controller';
 import { CronService } from './cron.service';
 import { NotificationsModule } from '../notifications/notifications.module';
 
 @Module({
   imports: [PrismaModule, IncidentsModule, NotificationsModule],
-  controllers: [RecordsController, SimulateController],
+  controllers: [RecordsController],
   providers: [
     RecordsService,
     PunchService,
