@@ -8,7 +8,7 @@ export class SimulateController {
 
   @Post('simulate')
   async simulate(@Body() body: any) {
-
+    console.log("🚨 CONTROLLER NUEVO");
     if (process.env.NODE_ENV === 'production') {
       throw new ForbiddenException('Not allowed in production');
     }
