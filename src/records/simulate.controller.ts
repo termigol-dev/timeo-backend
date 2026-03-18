@@ -8,7 +8,7 @@ export class SimulateController {
 
 
   constructor(
-    @Inject('PUNCH_V2')
+
     private readonly punchService: Punch2Service,
   ) { }
 

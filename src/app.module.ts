@@ -14,6 +14,7 @@ import { MobileModule } from './mobile/mobile.module'; // 👈 AÑADIDO
 import { DevicesModule } from './devices/devices.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ScheduleModule } from '@nestjs/schedule';
+import { SimulateModule } from './records/simulate.module';
 
 @Module({
   imports: [
@@ -32,6 +33,7 @@ import { ScheduleModule } from '@nestjs/schedule';
     DevicesModule,
     NotificationsModule,
     ScheduleModule.forRoot(), 
+    SimulateModule,
   ],
 })
 export class AppModule {}
