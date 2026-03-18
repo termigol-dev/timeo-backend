@@ -163,35 +163,47 @@ export class Punch2Service {
             include: { shifts: true },
         });
 
-        const localDate = new Date(date.getTime() + 60 * 60 * 1000);
-        const nowMinutes = localDate.getHours() * 60 + localDate.getMinutes();
+        // ⏱ tiempo continuo semanal
+        const weekday = date.getDay() === 0 ? 7 : date.getDay();
+
+        const now =
+            weekday * 1440 +
+            date.getHours() * 60 +
+            date.getMinutes();
 
         if (!schedule) {
             return type === RecordType.IN ? IncidentType.IN_EARLY : null;
         }
 
-        const today = localDate.getDay() === 0 ? 7 : localDate.getDay();
-
-        // 🔥 proyectar turnos a línea temporal real
+        // 🔥 normalización de turnos (fix salto de semana)
         const shifts = schedule.shifts.map(s => {
-            let dayDiff = s.weekday - today;
-            if (dayDiff < 0) dayDiff += 7;
+
+            let start =
+                s.weekday * 1440 +
+                this.timeToMinutes(s.startTime);
+
+            let end =
+                s.weekday * 1440 +
+                this.timeToMinutes(s.endTime);
+
+            // 👉 si ya pasó → mover a siguiente semana
+            if (start < now) {
+                start += 7 * 1440;
+                end += 7 * 1440;
+            }
 
             return {
                 ...s,
-                start: this.timeToMinutes(s.startTime) + dayDiff * 1440,
-                end: this.timeToMinutes(s.endTime) + dayDiff * 1440,
+                start,
+                end,
             };
         });
 
-        const now = nowMinutes;
-
         /* ============================
-           🟦 IN (TU LÓGICA EXACTA)
+           🟦 IN
         ============================ */
         if (type === RecordType.IN) {
 
-            // 👉 turno más cercano en la línea temporal
             const closest = shifts
                 .map(s => ({
                     shift: s,
@@ -202,7 +214,7 @@ export class Punch2Service {
 
             const diff = closest.diff;
 
-            console.log("📊 IN closest diff:", diff);
+            console.log("📊 IN diff:", diff);
 
             if (diff < -15) return IncidentType.IN_EARLY;
             if (diff > 15) return IncidentType.IN_LATE;
@@ -211,7 +223,7 @@ export class Punch2Service {
         }
 
         /* ============================
-           🟥 OUT (DEPENDIENTE DEL IN)
+           🟥 OUT
         ============================ */
         if (type === RecordType.OUT) {
 
@@ -230,7 +242,7 @@ export class Punch2Service {
                 return null;
             }
 
-            // 👉 evaluar ese IN
+            // 👉 evaluar el IN
             const inIncident = await this.evaluateSchedule({
                 userId,
                 branchId,
@@ -238,21 +250,27 @@ export class Punch2Service {
                 type: RecordType.IN,
             });
 
-            // 🔥 regla clave tuya
             if (inIncident === IncidentType.IN_EARLY) {
                 console.log("📊 OUT ignorado (IN_EARLY)");
                 return null;
             }
 
-            const lastInLocal = new Date(lastIn.createdAt.getTime() + 60 * 60 * 1000);
-            const lastInMinutes = lastInLocal.getHours() * 60 + lastInLocal.getMinutes();
+            const lastInWeekday = lastIn.createdAt.getDay() === 0 ? 7 : lastIn.createdAt.getDay();
 
-            const shift = shifts.find(
-                s => lastInMinutes >= s.start && lastInMinutes <= s.end
-            );
+            const lastInMinutes =
+                lastInWeekday * 1440 +
+                lastIn.createdAt.getHours() * 60 +
+                lastIn.createdAt.getMinutes();
+
+            const shift = shifts
+                .map(s => ({
+                    shift: s,
+                    abs: Math.abs(lastInMinutes - s.start),
+                }))
+                .sort((a, b) => a.abs - b.abs)[0]?.shift;
 
             if (!shift) {
-                console.log("📊 OUT sin turno asociado → null");
+                console.log("📊 OUT sin turno → null");
                 return null;
             }
 
