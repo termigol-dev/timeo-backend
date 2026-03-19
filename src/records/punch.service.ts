@@ -6,81 +6,10 @@ import {
   IncidentBy,
 } from '@prisma/client';
 
-type ScheduleEvaluation = {
-  status: 'OK' | 'EARLY' | 'LATE';
-  expectedTime?: string;
-  diffMinutes?: number;
-};
-
 @Injectable()
 export class PunchService {
 
-  constructor(
-    private readonly prisma: PrismaService,
-  ) { }
-
-  /* ======================================================
-   🧪 SIMULADOR (NO SE TOCA)
-  ====================================================== */
-
-  async simulateDay(body: {
-    userId: string;
-    companyId: string;
-    branchId: string;
-    date: string;
-    inTime?: string | null;
-    outTime?: string | null;
-  }) {
-
-    const { userId, companyId, branchId, date, inTime, outTime } = body;
-
-    const results: any[] = [];
-
-    const events: { type: RecordType; createdAt: Date }[] = [];
-
-    if (inTime) {
-      events.push({
-        type: RecordType.IN,
-        createdAt: this.buildLocalDate(date, inTime),
-      });
-    }
-
-    if (outTime) {
-      events.push({
-        type: RecordType.OUT,
-        createdAt: this.buildLocalDate(date, outTime),
-      });
-    }
-
-    for (const event of events) {
-
-      const evaluation = await this.evaluateSchedule({
-        userId,
-        branchId,
-        date: event.createdAt,
-        type: event.type,
-      });
-
-      const incident = this.handleIncidentFromEvaluation({
-        evaluation,
-        recordType: event.type,
-        recordCreatedAt: event.createdAt,
-        userId,
-        companyId,
-        branchId,
-      });
-
-      results.push({
-        event,
-        evaluation,
-        incident,
-      });
-    }
-
-    return {
-      simulatedEvents: results,
-    };
-  }
+  constructor(private readonly prisma: PrismaService) {}
 
   /* ======================================================
    🔥 PUNCH REAL
@@ -96,11 +25,7 @@ export class PunchService {
 
     const { userId, companyId, branchId, type } = params;
 
-    const membership = await this.getActiveMembership(
-      userId,
-      companyId,
-      branchId,
-    );
+    const membership = await this.getActiveMembership(userId, companyId, branchId);
 
     const lastRecord = await this.getLastRecord(membership.id);
 
@@ -112,7 +37,7 @@ export class PunchService {
       throw new BadRequestException('No active IN');
     }
 
-    // 📝 1. CREAR RECORD
+    // 📝 CREAR RECORD
     const record = await this.createRecord({
       type,
       userId,
@@ -121,241 +46,205 @@ export class PunchService {
       membershipId: membership.id,
     });
 
-    // 🧠 2. EVALUAR
-    const evaluation = await this.evaluateSchedule({
+    // 🧠 EVALUAR (NUEVA LÓGICA)
+    const incidentType = await this.evaluateSchedule({
       userId,
       branchId,
       date: record.createdAt,
       type,
     });
 
-    console.log('🧠 EVALUATION:', {
-      type,
-      createdAt: record.createdAt,
-      evaluation,
-    });
-
-    // 🎯 3. CREAR INCIDENCIA
-    await this.handleIncidentFromEvaluation({
-      evaluation,
-      recordType: type,
-      recordId: record.id,
-      recordCreatedAt: record.createdAt,
-      userId,
-      membershipId: membership.id,
-      companyId,
-      branchId,
-    });
+    // 🎯 CREAR INCIDENCIA
+    if (incidentType) {
+      await this.prisma.incident.create({
+        data: {
+          type: incidentType,
+          createdBy: IncidentBy.SYSTEM,
+          admitted: false,
+          userId,
+          membershipId: membership.id,
+          companyId,
+          branchId,
+          recordId: record.id,
+          occurredAt: record.createdAt,
+        },
+      });
+    }
 
     return record;
   }
 
   /* ======================================================
-   🧠 EVALUACIÓN
+   🧠 CORE — LÓGICA DEFINITIVA
   ====================================================== */
 
   private async evaluateSchedule({
-  userId,
-  branchId,
-  date,
-  type,
-}: {
-  userId: string;
-  branchId: string;
-  date: Date;
-  type: RecordType;
-}): Promise<ScheduleEvaluation> {
-
-  const weekday = date.getDay() === 0 ? 7 : date.getDay();
-
-  const schedule = await this.prisma.schedule.findFirst({
-    where: {
-      userId,
-      branchId,
-      validFrom: { lte: date },
-      OR: [{ validTo: null }, { validTo: { gte: date } }],
-    },
-    include: { shifts: true },
-  });
-
-  // 🔥 AJUSTE HORARIO ESPAÑA
-  const localDate = new Date(date.getTime() + 60 * 60 * 1000);
-  const nowMinutes = localDate.getHours() * 60 + localDate.getMinutes();
-
-  // ❗️ SIN HORARIO → IN_EARLY / OUT_EARLY (tu regla)
-  if (!schedule) {
-    return {
-      status: 'EARLY',
-      diffMinutes: -999,
-    };
-  }
-
-  const shiftsOfDay = schedule.shifts.filter(
-    s => s.weekday === weekday,
-  );
-
-  if (shiftsOfDay.length === 0) {
-    return {
-      status: 'EARLY',
-      diffMinutes: -999,
-    };
-  }
-
-  const enriched = shiftsOfDay.map(s => ({
-    ...s,
-    startMinutes: this.timeToMinutes(s.startTime),
-    endMinutes: this.timeToMinutes(s.endTime),
-  }));
-
-  // 🔥 CLAVE: detectar turno en vigor
-  const activeShift = enriched.find(
-    s => nowMinutes >= s.startMinutes && nowMinutes <= s.endMinutes
-  );
-
-  /* ============================
-     🟦 IN
-  ============================ */
-  if (type === RecordType.IN) {
-
-    // ✅ PRIORIDAD: turno activo
-    if (activeShift) {
-      return this.evaluateDiff(
-        nowMinutes - activeShift.startMinutes,
-        activeShift.startTime,
-      );
-    }
-
-    // 👉 si no → el más cercano por START
-    const closest = enriched
-      .map(s => ({
-        shift: s,
-        diff: Math.abs(nowMinutes - s.startMinutes),
-      }))
-      .sort((a, b) => a.diff - b.diff)[0];
-
-    return this.evaluateDiff(
-      nowMinutes - closest.shift.startMinutes,
-      closest.shift.startTime,
-    );
-  }
-
-  /* ============================
-     🟥 OUT
-  ============================ */
-  if (type === RecordType.OUT) {
-
-    // ✅ PRIORIDAD: turno activo
-    if (activeShift) {
-      return this.evaluateDiff(
-        nowMinutes - activeShift.endMinutes,
-        activeShift.endTime,
-      );
-    }
-
-    // 👉 si no → el más cercano por END
-    const closest = enriched
-      .map(s => ({
-        shift: s,
-        diff: Math.abs(nowMinutes - s.endMinutes),
-      }))
-      .sort((a, b) => a.diff - b.diff)[0];
-
-    return this.evaluateDiff(
-      nowMinutes - closest.shift.endMinutes,
-      closest.shift.endTime,
-    );
-  }
-
-  return { status: 'EARLY' };
-}
-
-  private evaluateDiff(
-    diffMinutes: number,
-    expectedTime?: string,
-  ): ScheduleEvaluation {
-
-    if (Math.abs(diffMinutes) <= 15) {
-      return { status: 'OK', expectedTime };
-    }
-
-    if (diffMinutes < -15) {
-      return { status: 'EARLY', expectedTime, diffMinutes };
-    }
-
-    return { status: 'LATE', expectedTime, diffMinutes };
-  }
-
-  /* ======================================================
-   🎯 INCIDENCIAS
-  ====================================================== */
-
-  private async handleIncidentFromEvaluation({
-    evaluation,
-    recordType,
-    recordId,
-    recordCreatedAt,
     userId,
-    membershipId,
-    companyId,
     branchId,
-  }: any) {
+    date,
+    type,
+  }: {
+    userId: string;
+    branchId: string;
+    date: Date;
+    type: RecordType;
+  }): Promise<IncidentType | null> {
 
-    if (evaluation.status === 'OK') return;
-
-    let type: IncidentType | null = null;
-
-    if (evaluation.status === 'EARLY') {
-      type =
-        recordType === RecordType.IN
-          ? IncidentType.IN_EARLY
-          : IncidentType.OUT_EARLY;
-    }
-
-    if (evaluation.status === 'LATE') {
-      type =
-        recordType === RecordType.IN
-          ? IncidentType.IN_LATE
-          : IncidentType.OUT_LATE;
-    }
-
-    if (!type) return;
-
-    await this.prisma.incident.create({
-      data: {
-        type,
-        createdBy: IncidentBy.SYSTEM,
-        admitted: false,
+    const schedule = await this.prisma.schedule.findFirst({
+      where: {
         userId,
-        membershipId,
-        companyId,
         branchId,
-        recordId,
-        occurredAt: recordCreatedAt,
-        expectedAt: evaluation.expectedTime
-          ? this.buildExpectedDate(recordCreatedAt, evaluation.expectedTime)
-          : null,
+        validFrom: { lte: date },
+        OR: [{ validTo: null }, { validTo: { gte: date } }],
       },
+      include: { shifts: true },
     });
+
+    if (!schedule || schedule.shifts.length === 0) {
+      return type === RecordType.IN ? IncidentType.IN_EARLY : null;
+    }
+
+    const now = date.getTime();
+
+    const shifts = schedule.shifts.map(s => {
+      const shiftStart = this.buildShiftDate(date, s.weekday, s.startTime);
+      const shiftEnd = this.buildShiftDate(date, s.weekday, s.endTime);
+
+      return {
+        ...s,
+        start: shiftStart.getTime(),
+        end: shiftEnd.getTime(),
+      };
+    });
+
+    /* ============================
+       🟦 IN
+    ============================ */
+
+    if (type === RecordType.IN) {
+
+      const validShifts = shifts.filter(s => now <= s.end + 15 * 60 * 1000);
+
+      const target = validShifts.length
+        ? this.getClosestByStart(validShifts, now)
+        : this.getNextShift(shifts, now);
+
+      const diff = (now - target.start) / 60000;
+
+      if (diff < -15) return IncidentType.IN_EARLY;
+      if (diff > 15) return IncidentType.IN_LATE;
+
+      return null;
+    }
+
+    /* ============================
+       🟥 OUT
+    ============================ */
+
+    if (type === RecordType.OUT) {
+
+      const lastIn = await this.prisma.record.findFirst({
+        where: {
+          userId,
+          branchId,
+          type: RecordType.IN,
+          createdAt: { lte: date },
+        },
+        orderBy: { createdAt: 'desc' },
+      });
+
+      if (!lastIn) return null;
+
+      const inTime = lastIn.createdAt.getTime();
+
+      /* ===== TURNO DEL IN ===== */
+
+      const validShiftsForIn = shifts.filter(s => inTime <= s.end + 15 * 60 * 1000);
+
+      const previousShift = validShiftsForIn.length
+        ? this.getClosestByStart(validShiftsForIn, inTime)
+        : this.getNextShift(shifts, inTime);
+
+      if (!previousShift) return null;
+
+      if (now < previousShift.start) return null;
+
+      /* ===== TURNO ACTUAL ===== */
+
+      const validCurrentShifts = shifts.filter(s => now <= s.end + 15 * 60 * 1000);
+
+      const currentShift = validCurrentShifts.length
+        ? this.getClosestByStart(validCurrentShifts, now)
+        : null;
+
+      /* ===== DECISIÓN ===== */
+
+      let targetShift = previousShift;
+      let isBrokenFlow = false;
+
+      if (currentShift && currentShift.start !== previousShift.start) {
+
+        const distPrev = Math.abs(now - previousShift.end);
+        const distCurr = Math.abs(now - currentShift.end);
+
+        const afterStartPlus15 = now >= currentShift.start + 15 * 60 * 1000;
+
+        if (afterStartPlus15) {
+          targetShift = currentShift;
+          isBrokenFlow = true;
+        } else {
+          if (distCurr < distPrev) {
+            targetShift = currentShift;
+            isBrokenFlow = true;
+          } else {
+            targetShift = previousShift;
+          }
+        }
+      }
+
+      /* ===== EVALUACIÓN ===== */
+
+      const diff = (now - targetShift.end) / 60000;
+
+      if (isBrokenFlow && diff >= -15 && diff < 15) {
+        return IncidentType.FORGOT_OUT;
+      }
+
+      if (diff < -15) return IncidentType.OUT_EARLY;
+      if (diff >= 15) return IncidentType.OUT_LATE;
+
+      return null;
+    }
+
+    return null;
   }
 
   /* ====================================================== */
 
-  private buildExpectedDate(baseDate: Date, time: string) {
-    const [h, m] = time.split(':').map(Number);
+  private getClosestByStart(shifts, now) {
+    return shifts.sort((a, b) =>
+      Math.abs(now - a.start) - Math.abs(now - b.start)
+    )[0];
+  }
+
+  private getNextShift(shifts, now) {
+    return shifts
+      .filter(s => s.start > now)
+      .sort((a, b) => a.start - b.start)[0];
+  }
+
+  private buildShiftDate(baseDate: Date, weekday: number, time: string) {
     const d = new Date(baseDate);
+    const currentDay = d.getDay() === 0 ? 7 : d.getDay();
+    let diff = weekday - currentDay;
+    if (diff < 0) diff += 7;
+
+    d.setDate(d.getDate() + diff);
+
+    const [h, m] = time.split(':').map(Number);
     d.setHours(h, m, 0, 0);
+
     return d;
-  }
-
-  private timeToMinutes(time: string) {
-    const [h, m] = time.split(':').map(Number);
-    return h * 60 + m;
-  }
-
-  private buildLocalDate(date: string, time: string) {
-    const [year, month, day] = date.split('-').map(Number);
-    const [h, m] = time.split(':').map(Number);
-    return new Date(year, month - 1, day, h, m, 0, 0);
   }
 
   private async getActiveMembership(userId: string, companyId: string, branchId: string) {
