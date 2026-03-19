@@ -761,6 +761,20 @@ export class UsersService {
 
       console.log('🗑️ SHIFTS FUTUROS BORRADOS:', deletedFutureShifts.count);
 
+      console.log('➡️ DELETE EXCEPTION BLOCKS START');
+
+      const deletedBlocks = await this.prisma.scheduleExceptionBlock.deleteMany({
+        where: {
+          exception: {
+            schedule: {
+              userId: userId,
+            },
+          },
+        },
+      });
+
+      console.log('🗑️ BLOCKS BORRADOS:', deletedBlocks.count);
+
       // 🗑️ excepciones
       console.log('➡️ DELETE FUTURE EXCEPTIONS START');
 
