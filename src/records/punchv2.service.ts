@@ -12,7 +12,7 @@ export class Punch2Service {
   constructor(private readonly prisma: PrismaService) {}
 
   /* ======================================================
-   🧪 SIMULADOR
+   🧪 SIMULADOR (CON MEMORIA)
   ====================================================== */
 
   async simulateDay(body: {
@@ -24,7 +24,7 @@ export class Punch2Service {
     outTime?: string | null;
   }) {
 
-    console.log("🧪 USANDO PUNCH V2 LIMPIO");
+    console.log("🧪 USANDO PUNCHV2 LIMPIO");
 
     const { userId, branchId, date, inTime, outTime } = body;
 
@@ -44,16 +44,36 @@ export class Punch2Service {
       });
     }
 
+    let lastSimulatedIn: Date | null = null;
+
     const results = [];
 
     for (const event of events) {
 
-      const incidentType = await this.evaluateSchedule({
-        userId,
-        branchId,
-        date: event.createdAt,
-        type: event.type,
-      });
+      let incidentType;
+
+      if (event.type === RecordType.IN) {
+
+        lastSimulatedIn = event.createdAt;
+
+        incidentType = await this.evaluateSchedule({
+          userId,
+          branchId,
+          date: event.createdAt,
+          type: RecordType.IN,
+        });
+
+      } else {
+
+        incidentType = await this.evaluateSchedule({
+          userId,
+          branchId,
+          date: event.createdAt,
+          type: RecordType.OUT,
+          simulatedLastIn: lastSimulatedIn,
+        });
+
+      }
 
       results.push({
         event,
@@ -65,7 +85,7 @@ export class Punch2Service {
   }
 
   /* ======================================================
-   🔥 PUNCH REAL
+   🔥 PUNCH REAL (SIN CAMBIOS)
   ====================================================== */
 
   async punch(params: {
@@ -90,7 +110,6 @@ export class Punch2Service {
       throw new BadRequestException('No active IN');
     }
 
-    // 1. Crear record
     const record = await this.createRecord({
       type,
       userId,
@@ -99,7 +118,6 @@ export class Punch2Service {
       membershipId: membership.id,
     });
 
-    // 2. Evaluar incidencia
     const incidentType = await this.evaluateSchedule({
       userId,
       branchId,
@@ -107,7 +125,6 @@ export class Punch2Service {
       type,
     });
 
-    // 3. Guardar incidencia
     if (incidentType) {
       await this.prisma.incident.create({
         data: {
@@ -128,7 +145,7 @@ export class Punch2Service {
   }
 
   /* ======================================================
-   🧠 CORE — EVALUACIÓN LIMPIA
+   🧠 CORE — EVALUACIÓN
   ====================================================== */
 
   private async evaluateSchedule({
@@ -136,11 +153,13 @@ export class Punch2Service {
     branchId,
     date,
     type,
+    simulatedLastIn,
   }: {
     userId: string;
     branchId: string;
     date: Date;
     type: RecordType;
+    simulatedLastIn?: Date | null;
   }): Promise<IncidentType | null> {
 
     console.log("🧠 EVALUATE V2 CLEAN", { type, date: date.toISOString() });
@@ -178,7 +197,6 @@ export class Punch2Service {
 
     if (type === RecordType.IN) {
 
-      // 👉 turnos válidos (end + 15)
       const validShifts = shifts.filter(s => now <= s.end + 15 * 60 * 1000);
 
       const target = validShifts.length
@@ -199,28 +217,35 @@ export class Punch2Service {
 
     if (type === RecordType.OUT) {
 
-      const lastIn = await this.prisma.record.findFirst({
-        where: {
-          userId,
-          branchId,
-          type: RecordType.IN,
-          createdAt: { lte: date },
-        },
-        orderBy: { createdAt: 'desc' },
-      });
+      let lastInDate: Date | null = null;
 
-      if (!lastIn) return null;
+      if (simulatedLastIn) {
+        lastInDate = simulatedLastIn;
+      } else {
+        const lastIn = await this.prisma.record.findFirst({
+          where: {
+            userId,
+            branchId,
+            type: RecordType.IN,
+            createdAt: { lte: date },
+          },
+          orderBy: { createdAt: 'desc' },
+        });
+
+        lastInDate = lastIn?.createdAt || null;
+      }
+
+      if (!lastInDate) return null;
 
       const inIncident = await this.evaluateSchedule({
         userId,
         branchId,
-        date: lastIn.createdAt,
+        date: lastInDate,
         type: RecordType.IN,
       });
 
       if (inIncident === IncidentType.IN_EARLY) return null;
 
-      // 👉 turno válido en momento OUT
       const validShifts = shifts.filter(s => now <= s.end + 15 * 60 * 1000);
 
       const target = validShifts.length
@@ -231,7 +256,6 @@ export class Punch2Service {
 
       const diff = (now - target.end) / 60000;
 
-      // detectar flujo roto
       const hadPreviousShift = shifts.some(s => s.end < target.start);
 
       if (hadPreviousShift && diff >= -15 && diff <= 15) {
@@ -247,9 +271,7 @@ export class Punch2Service {
     return null;
   }
 
-  /* ======================================================
-   🧩 HELPERS
-  ====================================================== */
+  /* ====================================================== */
 
   private getClosestByStart(shifts, now) {
     return shifts.sort((a, b) =>
