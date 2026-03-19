@@ -280,11 +280,18 @@ export class Punch2Service {
                 const afterStartPlus15 = now >= currentShift.start + 15 * 60 * 1000;
 
                 // 🔥 TU REGLA EXACTA
-                if (afterStartPlus15 && distCurr < distPrev) {
+                if (afterStartPlus15) {
+                    // 👉 después de +15 manda el turno actual SIEMPRE
                     targetShift = currentShift;
                     isBrokenFlow = true;
                 } else {
-                    targetShift = previousShift;
+                    // 👉 antes de +15 decidimos por proximidad
+                    if (distCurr < distPrev) {
+                        targetShift = currentShift;
+                        isBrokenFlow = true;
+                    } else {
+                        targetShift = previousShift;
+                    }
                 }
             }
 
@@ -300,7 +307,7 @@ export class Punch2Service {
             }
 
             if (diff < -15) return IncidentType.OUT_EARLY;
-            if (diff > 15) return IncidentType.OUT_LATE;
+            if (diff >= 15) return IncidentType.OUT_LATE;
 
             return null;
         }
