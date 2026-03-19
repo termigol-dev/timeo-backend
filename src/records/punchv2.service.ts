@@ -24,7 +24,7 @@ export class Punch2Service {
         outTime?: string | null;
     }) {
 
-        console.log("🧪 USANDO PV2 LIMPIO");
+        console.log("🧪 USANDO PV2 CLEAN");
 
         const { userId, branchId, date, inTime, outTime } = body;
 
@@ -162,7 +162,7 @@ export class Punch2Service {
         simulatedLastIn?: Date | null;
     }): Promise<IncidentType | null> {
 
-        console.log("🧠 EVALUATE SUPER V2 CLEAN", { type, date: date.toISOString() });
+        console.log("🧠 EVALUATE PV2 CLEAN", { type, date: date.toISOString() });
 
         const schedule = await this.prisma.schedule.findFirst({
             where: {
@@ -237,24 +237,67 @@ export class Punch2Service {
 
             if (!lastInDate) return null;
 
-            // 🔑 RECONSTRUIR TURNO DEL IN (MISMA LÓGICA QUE IN)
+            const now = date.getTime();
             const inTime = lastInDate.getTime();
+
+            /* ======================================================
+               🧠 TURNO DEL IN (turno anterior)
+            ====================================================== */
 
             const validShiftsForIn = shifts.filter(s => inTime <= s.end + 15 * 60 * 1000);
 
-            const inTarget = validShiftsForIn.length
+            const previousShift = validShiftsForIn.length
                 ? this.getClosestByStart(validShiftsForIn, inTime)
                 : this.getNextShift(shifts, inTime);
 
-            if (!inTarget) return null;
+            if (!previousShift) return null;
 
-            // ❗ REGLA CLAVE: OUT antes de start → null
-            if (now < inTarget.start) return null;
+            // ❗ OUT antes de start → null
+            if (now < previousShift.start) return null;
 
-            // 🔥 EVALUACIÓN REAL (SIEMPRE contra END)
-            const diff = (now - inTarget.end) / 60000;
+            /* ======================================================
+               🧠 TURNO ACTUAL (posible segundo turno)
+            ====================================================== */
 
-            console.log("📊 OUT diff:", diff);
+            const validCurrentShifts = shifts.filter(s => now <= s.end + 15 * 60 * 1000);
+
+            const currentShift = validCurrentShifts.length
+                ? this.getClosestByStart(validCurrentShifts, now)
+                : null;
+
+            /* ======================================================
+               🧠 DECISIÓN DE TURNO (flujo normal vs roto)
+            ====================================================== */
+
+            let targetShift = previousShift;
+            let isBrokenFlow = false;
+
+            if (currentShift && currentShift.start !== previousShift.start) {
+
+                const distPrev = Math.abs(now - previousShift.end);
+                const distCurr = Math.abs(now - currentShift.end);
+
+                const afterStartPlus15 = now >= currentShift.start + 15 * 60 * 1000;
+
+                // 🔥 TU REGLA EXACTA
+                if (afterStartPlus15 && distCurr < distPrev) {
+                    targetShift = currentShift;
+                    isBrokenFlow = true;
+                } else {
+                    targetShift = previousShift;
+                }
+            }
+
+            /* ======================================================
+               🎯 EVALUACIÓN FINAL (SIEMPRE contra END)
+            ====================================================== */
+
+            const diff = (now - targetShift.end) / 60000;
+
+            // 💥 FORGOT OUT
+            if (isBrokenFlow && diff >= -15 && diff <= 15) {
+                return IncidentType.FORGOT_OUT;
+            }
 
             if (diff < -15) return IncidentType.OUT_EARLY;
             if (diff > 15) return IncidentType.OUT_LATE;
