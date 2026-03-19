@@ -302,7 +302,7 @@ export class Punch2Service {
             const diff = (now - targetShift.end) / 60000;
 
             // 💥 FORGOT OUT
-            if (isBrokenFlow && diff >= -15 && diff <= 15) {
+            if (isBrokenFlow && diff >= -15 && diff < 15) {
                 return IncidentType.FORGOT_OUT;
             }
 
