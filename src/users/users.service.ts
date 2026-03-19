@@ -513,72 +513,72 @@ export class UsersService {
 
   /* ───────── BORRADO DEFINITIVO ───────── */
 
-async hardDeleteEmployee(companyId: string, employeeId: string) {
-  return this.prisma.$transaction(async prisma => {
+  async hardDeleteEmployee(companyId: string, employeeId: string) {
+    return this.prisma.$transaction(async prisma => {
 
-    const memberships = await prisma.membership.findMany({
-      where: {
-        userId: employeeId,
-        companyId,
-      },
-    });
-
-    const membershipIds = memberships.map(m => m.id);
-
-    const schedules = await prisma.schedule.findMany({
-      where: { userId: employeeId },
-      select: { id: true },
-    });
-
-    const scheduleIds = schedules.map(s => s.id);
-
-    // ✅ 1️⃣ blocks primero (CLAVE)
-    await prisma.scheduleExceptionBlock.deleteMany({
-      where: {
-        exception: {
-          scheduleId: { in: scheduleIds },
+      const memberships = await prisma.membership.findMany({
+        where: {
+          userId: employeeId,
+          companyId,
         },
-      },
-    });
+      });
 
-    // ✅ 2️⃣ exceptions
-    await prisma.scheduleException.deleteMany({
-      where: { scheduleId: { in: scheduleIds } },
-    });
+      const membershipIds = memberships.map(m => m.id);
 
-    // ✅ 3️⃣ shifts
-    await prisma.shift.deleteMany({
-      where: { scheduleId: { in: scheduleIds } },
-    });
+      const schedules = await prisma.schedule.findMany({
+        where: { userId: employeeId },
+        select: { id: true },
+      });
 
-    // ✅ 4️⃣ schedules
-    await prisma.schedule.deleteMany({
-      where: { id: { in: scheduleIds } },
-    });
+      const scheduleIds = schedules.map(s => s.id);
 
-    // ✅ 5️⃣ incidents
-    await prisma.incident.deleteMany({
-      where: { userId: employeeId },
-    });
+      // ✅ 1️⃣ blocks primero (CLAVE)
+      await prisma.scheduleExceptionBlock.deleteMany({
+        where: {
+          exception: {
+            scheduleId: { in: scheduleIds },
+          },
+        },
+      });
 
-    // ✅ 6️⃣ records
-    await prisma.record.deleteMany({
-      where: { userId: employeeId },
-    });
+      // ✅ 2️⃣ exceptions
+      await prisma.scheduleException.deleteMany({
+        where: { scheduleId: { in: scheduleIds } },
+      });
 
-    // ✅ 7️⃣ membership
-    await prisma.membership.deleteMany({
-      where: { id: { in: membershipIds } },
-    });
+      // ✅ 3️⃣ shifts
+      await prisma.shift.deleteMany({
+        where: { scheduleId: { in: scheduleIds } },
+      });
 
-    // ✅ 8️⃣ user
-    await prisma.user.delete({
-      where: { id: employeeId },
-    });
+      // ✅ 4️⃣ schedules
+      await prisma.schedule.deleteMany({
+        where: { id: { in: scheduleIds } },
+      });
 
-    return { ok: true };
-  });
-}
+      // ✅ 5️⃣ incidents
+      await prisma.incident.deleteMany({
+        where: { userId: employeeId },
+      });
+
+      // ✅ 6️⃣ records
+      await prisma.record.deleteMany({
+        where: { userId: employeeId },
+      });
+
+      // ✅ 7️⃣ membership
+      await prisma.membership.deleteMany({
+        where: { id: { in: membershipIds } },
+      });
+
+      // ✅ 8️⃣ user
+      await prisma.user.delete({
+        where: { id: employeeId },
+      });
+
+      return { ok: true };
+    });
+  }
   /* ───────── BORRADO EMPLEADO (INTELIGENTE) ───────── */
 
   async checkDeleteUser(
@@ -634,66 +634,252 @@ async hardDeleteEmployee(companyId: string, employeeId: string) {
     companyId: string,
     userId: string,
   ) {
-    this.ensureCompanyAccess(requestUser, companyId);
-
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        memberships: true,
-        records: true,
-      },
+    console.log('🧨 ===============================');
+    console.log('🧨 DELETE USER START');
+    console.log('🧨 ===============================');
+    console.log('INPUT:', {
+      companyId,
+      userId,
+      role: requestUser?.role,
     });
 
-    if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
+    try {
+      this.ensureCompanyAccess(requestUser, companyId);
 
-    const membershipsInOtherCompanies = user.memberships.filter(
-      m => m.companyId !== companyId,
-    ).length;
+      // 🔍 FETCH USER
+      console.log('🔍 FETCH USER START');
 
-    const hasRecords = user.records.length > 0;
-
-    if (membershipsInOtherCompanies > 0) {
-
-      await this.prisma.membership.deleteMany({
-        where: {
-          userId,
-          companyId,
-        },
-      });
-
-      return { success: true, case: 1 };
-    }
-
-    if (hasRecords) {
-
-      await this.prisma.membership.deleteMany({
-        where: {
-          userId,
-          companyId,
-        },
-      });
-
-      await this.prisma.user.update({
+      const user = await this.prisma.user.findUnique({
         where: { id: userId },
-        data: { active: false },
+        include: {
+          memberships: true,
+          records: true,
+        },
       });
 
-      return { success: true, case: 2 };
+      console.log('🔍 FETCH USER END');
+
+      if (!user) {
+        console.log('❌ Usuario no encontrado');
+        throw new NotFoundException('Usuario no encontrado');
+      }
+
+      const membership = user.memberships.find(m => m.companyId === companyId);
+
+      if (!membership) {
+        console.log('❌ Membership no encontrada');
+        throw new NotFoundException('Membership no encontrada');
+      }
+
+      const membershipsInOtherCompanies = user.memberships.filter(
+        m => m.companyId !== companyId,
+      ).length;
+
+      const hasRecords = user.records.length > 0;
+
+      console.log('📊 USER STATE', {
+        membershipsInOtherCompanies,
+        hasRecords,
+        memberships: user.memberships.length,
+        records: user.records.length,
+      });
+
+      // 📅 FECHAS
+      const today = new Date();
+      today.setHours(0, 0, 0, 0);
+
+      const yesterday = new Date(today);
+      yesterday.setDate(yesterday.getDate() - 1);
+
+      console.log('📅 FECHAS', { today, yesterday });
+
+      // 🧠 SHIFT CHECK
+      console.log('🧠 SHIFT CHECK START');
+
+      const workedShift = await this.prisma.shift.findFirst({
+        where: {
+          schedule: {
+            userId: userId,
+          },
+          validFrom: {
+            lte: today,
+          },
+        },
+      });
+
+      const hasWorkedShifts = !!workedShift;
+
+      console.log('🧠 SHIFT CHECK RESULT', {
+        hasWorkedShifts,
+        workedShiftId: workedShift?.id,
+      });
+
+      const hasLived = hasRecords || hasWorkedShifts;
+
+      console.log('🧠 FINAL DECISION INPUT', {
+        hasRecords,
+        hasWorkedShifts,
+        hasLived,
+      });
+
+      // 🧹 LIMPIEZA FUTURO
+      console.log('🧹 ===============================');
+      console.log('🧹 LIMPIEZA FUTURO START');
+
+      // 🔒 cerrar turnos activos/pasados
+      console.log('➡️ UPDATE SHIFTS (CLOSE) START');
+
+      const closedShifts = await this.prisma.shift.updateMany({
+        where: {
+          schedule: {
+            userId: userId,
+          },
+          validFrom: {
+            lte: today,
+          },
+        },
+        data: {
+          validTo: yesterday,
+        },
+      });
+
+      console.log('🔒 SHIFTS CERRADOS:', closedShifts.count);
+
+      // 🗑️ borrar futuros
+      console.log('➡️ DELETE FUTURE SHIFTS START');
+
+      const deletedFutureShifts = await this.prisma.shift.deleteMany({
+        where: {
+          schedule: {
+            userId: userId,
+          },
+          validFrom: {
+            gt: today,
+          },
+        },
+      });
+
+      console.log('🗑️ SHIFTS FUTUROS BORRADOS:', deletedFutureShifts.count);
+
+      // 🗑️ excepciones
+      console.log('➡️ DELETE FUTURE EXCEPTIONS START');
+
+      const deletedExceptions = await this.prisma.scheduleException.deleteMany({
+        where: {
+          schedule: {
+            userId: userId,
+          },
+          date: {
+            gt: today,
+          },
+        },
+      });
+
+      console.log('🗑️ EXCEPCIONES BORRADAS:', deletedExceptions.count);
+
+      console.log('🧹 LIMPIEZA FUTURO END');
+      console.log('🧹 ===============================');
+
+      // 🔀 DECISIÓN
+      console.log('🔀 ===============================');
+      console.log('🔀 DECISION ENGINE');
+
+      // ⚠️ REGLA CRÍTICA: si hay records → NO borrar membership
+      if (hasRecords) {
+        console.log('🔴 CASO: SOFT DELETE (TIENE RECORDS)');
+
+        console.log('➡️ UPDATE MEMBERSHIP START');
+
+        await this.prisma.membership.updateMany({
+          where: {
+            userId,
+            companyId,
+          },
+          data: {
+            active: false,
+          },
+        });
+
+        console.log('➡️ UPDATE USER START');
+
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { active: false },
+        });
+
+        console.log('✅ RESULT: SOFT DELETE');
+
+        return { success: true, case: 'SOFT_DELETE' };
+      }
+
+      if (membershipsInOtherCompanies > 0) {
+        console.log('🟡 CASO: REMOVE MEMBERSHIP (SIN RECORDS)');
+
+        console.log('➡️ DELETE MEMBERSHIP START');
+
+        await this.prisma.membership.deleteMany({
+          where: {
+            userId,
+            companyId,
+          },
+        });
+
+        console.log('✅ RESULT: REMOVE MEMBERSHIP');
+
+        return { success: true, case: 'REMOVE_MEMBERSHIP' };
+      }
+
+      if (hasLived) {
+        console.log('🔴 CASO: SOFT DELETE (POR SHIFTS)');
+
+        await this.prisma.membership.updateMany({
+          where: {
+            userId,
+            companyId,
+          },
+          data: {
+            active: false,
+          },
+        });
+
+        await this.prisma.user.update({
+          where: { id: userId },
+          data: { active: false },
+        });
+
+        return { success: true, case: 'SOFT_DELETE' };
+      }
+
+      console.log('🟢 CASO: HARD DELETE');
+
+      console.log('➡️ DELETE MEMBERSHIP START');
+
+      await this.prisma.membership.deleteMany({
+        where: {
+          userId,
+          companyId,
+        },
+      });
+
+      console.log('➡️ DELETE USER START');
+
+      await this.prisma.user.delete({
+        where: { id: userId },
+      });
+
+      console.log('✅ RESULT: HARD DELETE');
+
+      return { success: true, case: 'HARD_DELETE' };
+
+    } catch (error) {
+      console.log('💥 ===============================');
+      console.log('💥 DELETE USER ERROR');
+      console.log('💥 ===============================');
+
+      console.error('ERROR MESSAGE:', error.message);
+      console.error('STACK:', error.stack);
+
+      throw error;
     }
-
-    await this.prisma.membership.deleteMany({
-      where: {
-        userId,
-        companyId,
-      },
-    });
-
-    await this.prisma.user.delete({
-      where: { id: userId },
-    });
-
-    return { success: true, case: 3 };
   }
 }
