@@ -110,65 +110,68 @@ export class UsersService {
   }
 
   /* ───────── PERFIL GLOBAL (SIN companyId) ───────── */
-  async getUserById(
-    requestUser: any,
-    userId: string,
-  ) {
+ async getUserById(
+  requestUser: any,
+  userId: string,
+) {
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-      include: {
-        memberships: true,
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+    include: {
+      memberships: {
+        include: {
+          company: true, // 🔥 AÑADIDO
+        },
       },
-    });
+    },
+  });
 
-    if (!user) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
+  if (!user) {
+    throw new NotFoundException('Usuario no encontrado');
+  }
 
-    // 🔐 Seguridad:
-    // si no es superadmin, debe compartir al menos una empresa
-    if (requestUser.role !== Role.SUPERADMIN) {
+  // 🔐 Seguridad
+  if (requestUser.role !== Role.SUPERADMIN) {
 
-      const belongs = user.memberships.some(
-        m => m.companyId === requestUser.companyId,
+    const belongs = user.memberships.some(
+      m => m.companyId === requestUser.companyId,
+    );
+
+    if (!belongs) {
+      throw new ForbiddenException(
+        'No tienes acceso a este usuario',
       );
-
-      if (!belongs) {
-        throw new ForbiddenException(
-          'No tienes acceso a este usuario',
-        );
-      }
     }
+  }
 
-    // Para devolver datos de perfil usamos
-    // la membership de la empresa del usuario logado
-    // (o la primera si es superadmin)
-    const m =
-      requestUser.role === Role.SUPERADMIN
-        ? user.memberships[0]
-        : user.memberships.find(
+  const m =
+    requestUser.role === Role.SUPERADMIN
+      ? user.memberships[0]
+      : user.memberships.find(
           mm => mm.companyId === requestUser.companyId,
         );
 
-    if (!m) {
-      throw new NotFoundException('Usuario no encontrado');
-    }
-
-    return {
-      id: user.id,
-      name: user.name,
-      firstSurname: user.firstSurname,
-      secondSurname: user.secondSurname,
-      dni: user.dni,
-      email: user.email,
-      photoUrl: user.photoUrl,   // ✅ campo real
-      role: m.role,
-      branchId: m.branchId,
-      active: m.active,
-      companyId: m.companyId,
-    };
+  if (!m) {
+    throw new NotFoundException('Usuario no encontrado');
   }
+
+  return {
+    id: user.id,
+    name: user.name,
+    firstSurname: user.firstSurname,
+    secondSurname: user.secondSurname,
+    dni: user.dni,
+    email: user.email,
+    photoUrl: user.photoUrl,
+    role: m.role,
+    branchId: m.branchId,
+    active: m.active,
+    companyId: m.companyId,
+
+    // 🔥 NUEVO (CLAVE)
+    companyName: m.company?.commercialName || null,
+  };
+}
 
   /* ───────── CREAR / REACTIVAR USUARIO ───────── */
 
