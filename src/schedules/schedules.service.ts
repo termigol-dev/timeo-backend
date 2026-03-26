@@ -627,7 +627,7 @@ export class SchedulesService {
   /* ======================================================
       ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
    ====================================================== */
-  async deleteShift(op: {
+ async deleteShift(op: {
   scheduleId: string;
   shiftId?: string;
   weekdays?: number[];
@@ -649,14 +649,12 @@ export class SchedulesService {
   const {
     scheduleId,
     weekdays,
-    startTime,
-    endTime,
   } = op;
 
   // 🔥 NORMALIZACIÓN FINAL
   const fromDate = op.fromDate ?? op.date;
 
-  if (!weekdays || !startTime || !endTime || !fromDate) {
+  if (!weekdays || !fromDate) {
     throw new BadRequestException('Faltan datos para borrar por patrón');
   }
 
@@ -664,8 +662,6 @@ export class SchedulesService {
 
   console.log('🔴 SERVICE DESTRUCTURED:', {
     weekdays,
-    startTime,
-    endTime,
     fromDate,
   });
 
@@ -685,20 +681,12 @@ export class SchedulesService {
       },
     });
 
-    console.log('🔴 SHIFTS ENCONTRADOS (ANTES FILTRO):', shifts.length, shifts);
+    console.log('🔥 SHIFTS A BORRAR:', shifts.length, shifts);
 
-    // 🔥 FILTRO POR HORAS (CLAVE)
-    const filteredShifts = shifts.filter(shift =>
-      shift.startTime.startsWith(startTime) &&
-      shift.endTime.startsWith(endTime)
-    );
-
-    console.log('🟢 SHIFTS FILTRADOS (MATCH HORAS):', filteredShifts.length, filteredShifts);
-
-    for (const shift of filteredShifts) {
+    for (const shift of shifts) {
       const shiftStart = new Date(shift.validFrom);
 
-      // 🟡 histórico → cerrar
+      // 🟡 histórico → cerrar (NO tocar pasado)
       if (shiftStart < from) {
         const dayBefore = new Date(from);
         dayBefore.setDate(dayBefore.getDate() - 1);
@@ -719,6 +707,8 @@ export class SchedulesService {
       totalAffected++;
     }
   }
+
+  console.log('✅ DELETE RESULT:', totalAffected);
 
   return { affected: totalAffected };
 }
