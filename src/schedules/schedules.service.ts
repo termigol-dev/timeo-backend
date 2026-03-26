@@ -678,14 +678,14 @@ export class SchedulesService {
         where: {
           scheduleId,
           weekday,
-          startTime,
-          endTime,
           OR: [
             { validTo: null },
             { validTo: { gte: from } },
           ],
         },
       });
+
+      console.log('🔴 SHIFTS ENCONTRADOS:', shifts.length, shifts);
 
       for (const shift of shifts) {
         const shiftStart = new Date(shift.validFrom);
