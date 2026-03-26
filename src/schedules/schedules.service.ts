@@ -480,93 +480,93 @@ export class SchedulesService {
   }
 
 
-async addExceptions(
-  scheduleId: string,
-  exceptions: {
-    type: 'EXTRA_SHIFT' | 'MODIFIED_SHIFT' | 'DAY_OFF' | 'VACATION';
-    date: string;
-    blocks?: { startTime: string; endTime: string }[];
-    mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
-  }[],
-) {
+  async addExceptions(
+    scheduleId: string,
+    exceptions: {
+      type: 'EXTRA_SHIFT' | 'MODIFIED_SHIFT' | 'DAY_OFF' | 'VACATION';
+      date: string;
+      blocks?: { startTime: string; endTime: string }[];
+      mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
+    }[],
+  ) {
 
-  for (const ex of exceptions) {
+    for (const ex of exceptions) {
 
-    console.log('🧪 EXCEPTION INPUT', ex);
+      console.log('🧪 EXCEPTION INPUT', ex);
 
-    const exDate = new Date(ex.date);
-    exDate.setHours(0, 0, 0, 0);
+      const exDate = new Date(ex.date);
+      exDate.setHours(0, 0, 0, 0);
 
-    // =====================================================
-    // 🔴 1. BORRAR SIEMPRE LO QUE HAYA ESE DÍA
-    // =====================================================
-    const existing = await this.prisma.scheduleException.findMany({
-      where: { scheduleId, date: exDate },
-      select: { id: true },
-    });
+      // =====================================================
+      // 🔴 1. BORRAR SIEMPRE LO QUE HAYA ESE DÍA
+      // =====================================================
+      const existing = await this.prisma.scheduleException.findMany({
+        where: { scheduleId, date: exDate },
+        select: { id: true },
+      });
 
-    if (existing.length > 0) {
-      await this.prisma.scheduleExceptionBlock.deleteMany({
-        where: {
-          exceptionId: { in: existing.map(e => e.id) },
+      if (existing.length > 0) {
+        await this.prisma.scheduleExceptionBlock.deleteMany({
+          where: {
+            exceptionId: { in: existing.map(e => e.id) },
+          },
+        });
+
+        await this.prisma.scheduleException.deleteMany({
+          where: { id: { in: existing.map(e => e.id) } },
+        });
+
+        console.log('🧹 OLD EXCEPTIONS REMOVED');
+      }
+
+      // =====================================================
+      // 🔵 2. MAPEAR TIPO (ENUM CORRECTO)
+      // =====================================================
+      let mappedType: ScheduleExceptionType;
+
+      if (ex.type === 'VACATION') {
+        mappedType = ScheduleExceptionType.VACATION;
+      } else if (ex.type === 'DAY_OFF') {
+        mappedType = ScheduleExceptionType.DAY_OFF;
+      } else if (ex.type === 'MODIFIED_SHIFT') {
+        mappedType = ScheduleExceptionType.MODIFIED_SHIFT;
+      } else {
+        mappedType = ScheduleExceptionType.EXTRA_SHIFT;
+      }
+
+      // =====================================================
+      // 🟢 3. CREAR EXCEPCIÓN
+      // =====================================================
+      const exception = await this.prisma.scheduleException.create({
+        data: {
+          scheduleId,
+          date: exDate,
+          type: mappedType,
         },
       });
 
-      await this.prisma.scheduleException.deleteMany({
-        where: { id: { in: existing.map(e => e.id) } },
-      });
+      console.log('✅ EXCEPTION CREATED', exception.id);
 
-      console.log('🧹 OLD EXCEPTIONS REMOVED');
+      // =====================================================
+      // 🧱 4. CREAR BLOQUES (si existen)
+      // =====================================================
+      if (ex.blocks && ex.blocks.length > 0) {
+        await this.prisma.scheduleExceptionBlock.createMany({
+          data: ex.blocks.map(b => ({
+            exceptionId: exception.id,
+            startTime: b.startTime,
+            endTime: b.endTime,
+          })),
+        });
+
+        console.log('🧱 BLOCKS CREATED', ex.blocks);
+      } else {
+        console.log('⚠️ NO BLOCKS (día vacío o vacation)');
+      }
     }
 
-    // =====================================================
-    // 🔵 2. MAPEAR TIPO (ENUM CORRECTO)
-    // =====================================================
-    let mappedType: ScheduleExceptionType;
-
-    if (ex.type === 'VACATION') {
-      mappedType = ScheduleExceptionType.VACATION;
-    } else if (ex.type === 'DAY_OFF') {
-      mappedType = ScheduleExceptionType.DAY_OFF;
-    } else if (ex.type === 'MODIFIED_SHIFT') {
-      mappedType = ScheduleExceptionType.MODIFIED_SHIFT;
-    } else {
-      mappedType = ScheduleExceptionType.EXTRA_SHIFT;
-    }
-
-    // =====================================================
-    // 🟢 3. CREAR EXCEPCIÓN
-    // =====================================================
-    const exception = await this.prisma.scheduleException.create({
-      data: {
-        scheduleId,
-        date: exDate,
-        type: mappedType,
-      },
-    });
-
-    console.log('✅ EXCEPTION CREATED', exception.id);
-
-    // =====================================================
-    // 🧱 4. CREAR BLOQUES (si existen)
-    // =====================================================
-    if (ex.blocks && ex.blocks.length > 0) {
-      await this.prisma.scheduleExceptionBlock.createMany({
-        data: ex.blocks.map(b => ({
-          exceptionId: exception.id,
-          startTime: b.startTime,
-          endTime: b.endTime,
-        })),
-      });
-
-      console.log('🧱 BLOCKS CREATED', ex.blocks);
-    } else {
-      console.log('⚠️ NO BLOCKS (día vacío o vacation)');
-    }
+    return { ok: true };
   }
-
-  return { ok: true };
-}
 
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
@@ -627,244 +627,74 @@ async addExceptions(
   /* ======================================================
       ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
    ====================================================== */
-  async deleteShift(
-    scheduleId: string,
-    body: {
-      mode: 'END_SHIFT' | 'DELETE_SHIFT';
-      shiftId: string;
-      date?: string;
-    },
-  ) {
+  async deleteShift(op: {
+    scheduleId: string;
+    shiftId?: string;
+    weekdays?: number[];
+    startTime?: string;
+    endTime?: string;
+    fromDate?: string;
+  }) {
 
-    console.log('🧨 DELETE SHIFT REQUEST', {
-      scheduleId,
-      mode: body.mode,
-      shiftId: body.shiftId,
-      date: body.date,
-    });
-
-    const { mode, shiftId, date } = body;
-
-    if (!shiftId) {
-      throw new BadRequestException('shiftId obligatorio');
+    // 🟢 CASO 1 — compatibilidad antigua
+    if (op.shiftId) {
+      return this.prisma.shift.delete({
+        where: { id: op.shiftId },
+      });
     }
 
-    if (mode === 'END_SHIFT') {
+    const { scheduleId, weekdays, startTime, endTime, fromDate } = op;
 
-      if (!date) {
-        throw new BadRequestException('date obligatoria para END_SHIFT');
+    if (!weekdays || !startTime || !endTime || !fromDate) {
+      throw new BadRequestException('Faltan datos para borrar por patrón');
+    }
+
+    const from = new Date(fromDate);
+
+    let totalAffected = 0;
+
+    // 🔁 CLAVE → iterar días
+    for (const weekday of weekdays) {
+
+      const shifts = await this.prisma.shift.findMany({
+        where: {
+          scheduleId,
+          weekday,
+          startTime,
+          endTime,
+          OR: [
+            { validTo: null },
+            { validTo: { gte: from } },
+          ],
+        },
+      });
+
+      for (const shift of shifts) {
+        const shiftStart = new Date(shift.validFrom);
+
+        // 🟡 histórico → cerrar
+        if (shiftStart < from) {
+          const dayBefore = new Date(from);
+          dayBefore.setDate(dayBefore.getDate() - 1);
+
+          await this.prisma.shift.update({
+            where: { id: shift.id },
+            data: { validTo: dayBefore },
+          });
+        }
+
+        // 🔵 futuro → borrar
+        else {
+          await this.prisma.shift.delete({
+            where: { id: shift.id },
+          });
+        }
+
+        totalAffected++;
       }
-
-      const baseDate = new Date(date);
-      baseDate.setHours(0, 0, 0, 0);
-
-      const dayBefore = new Date(baseDate);
-      dayBefore.setDate(dayBefore.getDate() - 1);
-      dayBefore.setHours(23, 59, 59, 999);
-
-      console.log('📅 CALCULO FECHAS', { baseDate, dayBefore });
-
-      return await this.prisma.$transaction(async (tx) => {
-
-        const shift = await tx.shift.findUnique({
-          where: { id: shiftId }
-        });
-
-        console.log("🧪 SHIFT BEFORE UPDATE", {
-          shiftId,
-          validFrom: shift?.validFrom,
-          validTo: shift?.validTo,
-          requestedDate: baseDate,
-        });
-
-        if (!shift) {
-          throw new BadRequestException('Shift no encontrado');
-        }
-
-        const shiftStart = shift.startTime;
-        const shiftEnd = shift.endTime;
-
-        const validFrom = new Date(shift.validFrom);
-        validFrom.setHours(0, 0, 0, 0);
-
-        if (dayBefore < validFrom) {
-
-          console.log('💣 BORRADO COMPLETO DEL TURNO');
-
-          await tx.shift.delete({
-            where: { id: shiftId }
-          });
-
-        } else {
-
-          console.log('✂️ CERRANDO TURNO', {
-            shiftId,
-            newValidTo: dayBefore
-          });
-
-          await tx.shift.update({
-            where: { id: shiftId },
-            data: { validTo: dayBefore }
-          });
-        }
-
-        // ====================================
-        // PROCESAR EXCEPCIONES FUTURAS
-        // ====================================
-
-        console.log('🧹 BUSCANDO EXCEPCIONES FUTURAS');
-
-        const futureExceptions = await tx.scheduleException.findMany({
-          where: {
-            scheduleId,
-            date: { gte: baseDate }
-          },
-          include: { blocks: true }
-        });
-
-        const subtractInterval = (blockStart: string, blockEnd: string) => {
-
-          const result = [];
-
-          if (blockEnd <= shiftStart || blockStart >= shiftEnd) {
-            result.push({ startTime: blockStart, endTime: blockEnd });
-            return result;
-          }
-
-          if (blockStart < shiftStart) {
-            result.push({
-              startTime: blockStart,
-              endTime: shiftStart
-            });
-          }
-
-          if (blockEnd > shiftEnd) {
-            result.push({
-              startTime: shiftEnd,
-              endTime: blockEnd
-            });
-          }
-
-          return result;
-        };
-
-        for (const ex of futureExceptions) {
-
-          const remainingBlocks = [];
-
-          for (const block of ex.blocks) {
-
-            const fragments = subtractInterval(
-              block.startTime,
-              block.endTime
-            );
-
-            remainingBlocks.push(...fragments);
-          }
-
-          if (remainingBlocks.length === 0) {
-
-            console.log('🧹 BORRANDO EXCEPCIÓN SIN HORAS RESTANTES', ex.id);
-
-            await tx.scheduleExceptionBlock.deleteMany({
-              where: { exceptionId: ex.id }
-            });
-
-            await tx.scheduleException.delete({
-              where: { id: ex.id }
-            });
-
-          } else {
-
-            console.log('✂️ RECREANDO EXCEPCIÓN CON HORAS RESTANTES', {
-              exceptionId: ex.id,
-              blocks: remainingBlocks
-            });
-
-            await tx.scheduleExceptionBlock.deleteMany({
-              where: { exceptionId: ex.id }
-            });
-
-            for (const block of remainingBlocks) {
-
-              await tx.scheduleExceptionBlock.create({
-                data: {
-                  exceptionId: ex.id,
-                  startTime: block.startTime,
-                  endTime: block.endTime
-                }
-              });
-
-            }
-
-          }
-
-        }
-
-        // ====================================
-        // LIMPIEZA DE EXCEPCIONES HUÉRFANAS
-        // ====================================
-
-        const orphanExceptions = await tx.scheduleException.findMany({
-          where: {
-            scheduleId,
-            date: { gte: baseDate }
-          }
-        });
-
-        for (const ex of orphanExceptions) {
-
-          const date = new Date(ex.date);
-          date.setHours(0, 0, 0, 0);
-
-          const weekday = date.getDay() === 0 ? 7 : date.getDay();
-
-          const activeShifts = await tx.shift.findMany({
-            where: {
-              scheduleId,
-              weekday,
-              validFrom: { lte: date },
-              OR: [
-                { validTo: null },
-                { validTo: { gte: date } }
-              ]
-            }
-          });
-
-          const blocks = await tx.scheduleExceptionBlock.findMany({
-            where: { exceptionId: ex.id }
-          });
-
-          if (activeShifts.length === 0 && blocks.length === 0) {
-
-            console.log('🧹 BORRANDO EXCEPCIÓN HUÉRFANA', ex.id);
-
-            await tx.scheduleException.delete({
-              where: { id: ex.id }
-            });
-
-          }
-
-        }
-
-        return { ok: true };
-
-      });
-
     }
 
-    if (mode === 'DELETE_SHIFT') {
-
-      console.log('💣 DELETE_SHIFT DIRECTO');
-
-      await this.prisma.shift.delete({
-        where: { id: shiftId }
-      });
-
-      return { ok: true };
-    }
-
-    throw new BadRequestException('Modo no soportado');
+    return { affected: totalAffected };
   }
   /* ======================================================
    ELIMINAR VACACIONES
