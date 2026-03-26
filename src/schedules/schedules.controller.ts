@@ -94,9 +94,18 @@ deleteShifts(
   },
 ) {
 
-  console.log('🔥 DELETE SHIFTS CONTROLLER HIT');
-
-  console.log('🟣 CONTROLLER BODY RAW:', body);
+  console.log('🟠 CONTROLLER BODY:', body);
+  //console.log('🔥 DELETE SHIFTS CONTROLLER HIT');
+  //console.log('🟣 CONTROLLER BODY RAW:', body);
+  const fromDate = body.dateFrom ?? body.date;
+ console.log('🟠 CONTROLLER → SERVICE:', {
+  scheduleId,
+  weekdays: body.weekdays,
+  weekday: body.weekday,
+  startTime: body.startTime,
+  endTime: body.endTime,
+  fromDate: fromDate,
+});
   return this.schedulesService.deleteShift({
     scheduleId,
 
