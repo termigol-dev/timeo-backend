@@ -72,46 +72,47 @@ export class SchedulesController {
    🆕 ELIMINAR TURNOS (PANEL SUPERIOR)
 ====================================================== */
   @Delete(':scheduleId/shifts')
-  @Roles(
-    Role.SUPERADMIN,
-    Role.ADMIN_EMPRESA,
-    Role.ADMIN_SUCURSAL,
-  )
-  deleteShifts(
-    @Param('scheduleId') scheduleId: string,
-    @Body()
-    body: {
-      source: 'PANEL' | 'CALENDAR';
-      mode: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
-      dateFrom?: string;
-      dateTo?: string;
-      date?: string;
-      startTime?: string;
-      endTime?: string;
-      shiftId?: string;
-    },
-  ) {
+@Roles(
+  Role.SUPERADMIN,
+  Role.ADMIN_EMPRESA,
+  Role.ADMIN_SUCURSAL,
+)
+deleteShifts(
+  @Param('scheduleId') scheduleId: string,
+  @Body()
+  body: {
+    source?: 'PANEL' | 'CALENDAR';
+    mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
+    dateFrom?: string;
+    dateTo?: string;
+    date?: string;
+    startTime?: string;
+    endTime?: string;
+    shiftId?: string;
+    weekdays?: number[]; // 🔥 CLAVE NUEVA
+    weekday?: number;    // 🔥 compatibilidad
+  },
+) {
 
-    console.log('🧾 CONTROLLER DELETE SHIFT', {
-      scheduleId,
-      mode: body.mode,
-      shiftId: body.shiftId,
-      dateFrom: body.dateFrom,
-      date: body.date,
-    });
+  console.log('🧾 CONTROLLER DELETE SHIFT', {
+    scheduleId,
+    body,
+  });
 
-    // 🧠 Traducir intención frontend → acción backend
-    const mappedMode = body.mode === 'ONLY_THIS_BLOCK'
-  ? 'DELETE_SHIFT'
-  : 'END_SHIFT';
+  return this.schedulesService.deleteShift({
+    scheduleId,
 
-    return this.schedulesService.deleteShift(scheduleId, {
-      mode: mappedMode,
-      shiftId: body.shiftId!,
-      date: body.dateFrom ?? body.date, // ⭐ FIX REAL
-    });
-  }
+    // 🧠 compatibilidad → si viene uno solo lo convertimos a array
+    weekdays: body.weekdays ?? (body.weekday ? [body.weekday] : undefined),
 
+    startTime: body.startTime,
+    endTime: body.endTime,
+
+    fromDate: body.dateFrom ?? body.date,
+
+    shiftId: body.shiftId, // por si algún caso antiguo lo usa
+  });
+}
   /* ======================================================
      CALCULAR HORAS SEMANALES (PREVIEW)
   ====================================================== */
