@@ -627,7 +627,7 @@ export class SchedulesService {
   /* ======================================================
       ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
    ====================================================== */
- async deleteShift(op: {
+  async deleteShift(op: {
   scheduleId: string;
   shiftId?: string;
   weekdays?: number[];
@@ -639,7 +639,6 @@ export class SchedulesService {
 
   console.log('🔴 SERVICE DELETE INPUT:', op);
 
-  // 🟢 CASO 1 — compatibilidad antigua
   if (op.shiftId) {
     return this.prisma.shift.delete({
       where: { id: op.shiftId },
@@ -649,9 +648,10 @@ export class SchedulesService {
   const {
     scheduleId,
     weekdays,
+    startTime,
+    endTime, // 👈 IMPORTANTE
   } = op;
 
-  // 🔥 NORMALIZACIÓN FINAL
   const fromDate = op.fromDate ?? op.date;
 
   if (!weekdays || !fromDate) {
@@ -662,12 +662,13 @@ export class SchedulesService {
 
   console.log('🔴 SERVICE DESTRUCTURED:', {
     weekdays,
+    startTime,
+    endTime,
     fromDate,
   });
 
   let totalAffected = 0;
 
-  // 🔁 ITERACIÓN POR DÍAS
   for (const weekday of weekdays) {
 
     const shifts = await this.prisma.shift.findMany({
@@ -681,12 +682,19 @@ export class SchedulesService {
       },
     });
 
-    console.log('🔥 SHIFTS A BORRAR:', shifts.length, shifts);
+    console.log('🔥 SHIFTS ENCONTRADOS:', shifts.length);
 
-    for (const shift of shifts) {
+    // 🔥 FILTRO CLAVE (AÑADIDO)
+    const filteredShifts = shifts.filter(shift =>
+      (!startTime || shift.startTime.startsWith(startTime)) &&
+      (!endTime || shift.endTime.startsWith(endTime))
+    );
+
+    console.log('🟢 SHIFTS FILTRADOS:', filteredShifts.length);
+
+    for (const shift of filteredShifts) {
       const shiftStart = new Date(shift.validFrom);
 
-      // 🟡 histórico → cerrar (NO tocar pasado)
       if (shiftStart < from) {
         const dayBefore = new Date(from);
         dayBefore.setDate(dayBefore.getDate() - 1);
@@ -695,10 +703,7 @@ export class SchedulesService {
           where: { id: shift.id },
           data: { validTo: dayBefore },
         });
-      }
-
-      // 🔵 futuro → borrar
-      else {
+      } else {
         await this.prisma.shift.delete({
           where: { id: shift.id },
         });
