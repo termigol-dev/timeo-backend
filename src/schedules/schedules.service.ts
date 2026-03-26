@@ -634,7 +634,7 @@ export class SchedulesService {
     startTime?: string;
     endTime?: string;
     fromDate?: string;
-    date?: string; // 👈 AÑADIR
+    date?: string;
   }) {
 
     console.log('🔴 SERVICE DELETE INPUT:', op);
@@ -653,10 +653,7 @@ export class SchedulesService {
       endTime,
     } = op;
 
-
-
-
-    // 🔥 NORMALIZACIÓN CLAVE
+    // 🔥 NORMALIZACIÓN FINAL
     const fromDate = op.fromDate ?? op.date;
 
     if (!weekdays || !startTime || !endTime || !fromDate) {
@@ -667,7 +664,6 @@ export class SchedulesService {
 
     console.log('🔴 SERVICE DESTRUCTURED:', {
       weekdays,
-      weekday: (op as any).weekday,
       startTime,
       endTime,
       fromDate,
@@ -675,7 +671,7 @@ export class SchedulesService {
 
     let totalAffected = 0;
 
-    // 🔁 CLAVE → iterar días (esto está PERFECTO)
+    // 🔁 ITERACIÓN POR DÍAS (CORRECTO)
     for (const weekday of weekdays) {
 
       const shifts = await this.prisma.shift.findMany({

@@ -72,54 +72,57 @@ export class SchedulesController {
    🆕 ELIMINAR TURNOS (PANEL SUPERIOR)
 ====================================================== */
   @Delete(':scheduleId/shifts')
-@Roles(
-  Role.SUPERADMIN,
-  Role.ADMIN_EMPRESA,
-  Role.ADMIN_SUCURSAL,
-)
-deleteShifts(
-  @Param('scheduleId') scheduleId: string,
-  @Body()
-  body: {
-    source?: 'PANEL' | 'CALENDAR';
-    mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
-    dateFrom?: string;
-    dateTo?: string;
-    date?: string;
-    startTime?: string;
-    endTime?: string;
-    shiftId?: string;
-    weekdays?: number[]; // 🔥 CLAVE NUEVA
-    weekday?: number;    // 🔥 compatibilidad
-  },
-) {
+  @Roles(
+    Role.SUPERADMIN,
+    Role.ADMIN_EMPRESA,
+    Role.ADMIN_SUCURSAL,
+  )
+  deleteShifts(
+    @Param('scheduleId') scheduleId: string,
+    @Body()
+    body: {
+      source?: 'PANEL' | 'CALENDAR';
+      mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON' | 'RANGE';
+      fromDate?: string;   // ✅ AÑADIDO
+      dateFrom?: string;
+      dateTo?: string;
+      date?: string;
+      startTime?: string;
+      endTime?: string;
+      shiftId?: string;
+      weekdays?: number[];
+      weekday?: number;
+    },
+  ) {
 
-  console.log('🟠 CONTROLLER BODY:', body);
-  //console.log('🔥 DELETE SHIFTS CONTROLLER HIT');
-  //console.log('🟣 CONTROLLER BODY RAW:', body);
-  const fromDate = body.dateFrom ?? body.date;
- console.log('🟠 CONTROLLER → SERVICE:', {
-  scheduleId,
-  weekdays: body.weekdays,
-  weekday: body.weekday,
-  startTime: body.startTime,
-  endTime: body.endTime,
-  fromDate: fromDate,
-});
-  return this.schedulesService.deleteShift({
-    scheduleId,
+    console.log('🟠 CONTROLLER BODY:', body);
 
-    // 🧠 compatibilidad → si viene uno solo lo convertimos a array
-    weekdays: body.weekdays ?? (body.weekday ? [body.weekday] : undefined),
+    // 🔥 NORMALIZACIÓN REAL (CLAVE DEL BUG)
+    const fromDate = body.fromDate ?? body.dateFrom ?? body.date;
 
-    startTime: body.startTime,
-    endTime: body.endTime,
+    console.log('🟠 CONTROLLER → SERVICE:', {
+      scheduleId,
+      weekdays: body.weekdays,
+      weekday: body.weekday,
+      startTime: body.startTime,
+      endTime: body.endTime,
+      fromDate,
+    });
 
-    fromDate: body.dateFrom ?? body.date,
+    return this.schedulesService.deleteShift({
+      scheduleId,
 
-    shiftId: body.shiftId, // por si algún caso antiguo lo usa
-  });
-}
+      // ✅ SIEMPRE ARRAY
+      weekdays: body.weekdays ?? (body.weekday ? [body.weekday] : undefined),
+
+      startTime: body.startTime,
+      endTime: body.endTime,
+
+      fromDate, // ✅ USAMOS VARIABLE NORMALIZADA
+
+      shiftId: body.shiftId,
+    });
+  }
   /* ======================================================
      CALCULAR HORAS SEMANALES (PREVIEW)
   ====================================================== */
