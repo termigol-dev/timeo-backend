@@ -94,11 +94,11 @@ deleteShifts(
   },
 ) {
 
-  console.log('🧾 CONTROLLER DELETE SHIFT', {
-    scheduleId,
-    body,
-  });
-
+  console.log('🟣 CONTROLLER BODY RAW:', body);
+  console.log('🧾 CONTROLLER TYPES:', {
+  weekday: body.weekday,
+  weekdays: body.weekdays,
+});
   return this.schedulesService.deleteShift({
     scheduleId,
 
