@@ -628,92 +628,100 @@ export class SchedulesService {
       ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
    ====================================================== */
   async deleteShift(op: {
-    scheduleId: string;
-    shiftId?: string;
-    weekdays?: number[];
-    startTime?: string;
-    endTime?: string;
-    fromDate?: string;
-    date?: string;
-  }) {
+  scheduleId: string;
+  shiftId?: string;
+  weekdays?: number[];
+  startTime?: string;
+  endTime?: string;
+  fromDate?: string;
+  date?: string;
+}) {
 
-    console.log('🔴 SERVICE DELETE INPUT:', op);
+  console.log('🔴 SERVICE DELETE INPUT:', op);
 
-    // 🟢 CASO 1 — compatibilidad antigua
-    if (op.shiftId) {
-      return this.prisma.shift.delete({
-        where: { id: op.shiftId },
-      });
-    }
+  // 🟢 CASO 1 — compatibilidad antigua
+  if (op.shiftId) {
+    return this.prisma.shift.delete({
+      where: { id: op.shiftId },
+    });
+  }
 
-    const {
-      scheduleId,
-      weekdays,
-      startTime,
-      endTime,
-    } = op;
+  const {
+    scheduleId,
+    weekdays,
+    startTime,
+    endTime,
+  } = op;
 
-    // 🔥 NORMALIZACIÓN FINAL
-    const fromDate = op.fromDate ?? op.date;
+  // 🔥 NORMALIZACIÓN FINAL
+  const fromDate = op.fromDate ?? op.date;
 
-    if (!weekdays || !startTime || !endTime || !fromDate) {
-      throw new BadRequestException('Faltan datos para borrar por patrón');
-    }
+  if (!weekdays || !startTime || !endTime || !fromDate) {
+    throw new BadRequestException('Faltan datos para borrar por patrón');
+  }
 
-    const from = new Date(fromDate);
+  const from = new Date(fromDate);
 
-    console.log('🔴 SERVICE DESTRUCTURED:', {
-      weekdays,
-      startTime,
-      endTime,
-      fromDate,
+  console.log('🔴 SERVICE DESTRUCTURED:', {
+    weekdays,
+    startTime,
+    endTime,
+    fromDate,
+  });
+
+  let totalAffected = 0;
+
+  // 🔁 ITERACIÓN POR DÍAS
+  for (const weekday of weekdays) {
+
+    const shifts = await this.prisma.shift.findMany({
+      where: {
+        scheduleId,
+        weekday,
+        OR: [
+          { validTo: null },
+          { validTo: { gte: from } },
+        ],
+      },
     });
 
-    let totalAffected = 0;
+    console.log('🔴 SHIFTS ENCONTRADOS (ANTES FILTRO):', shifts.length, shifts);
 
-    // 🔁 ITERACIÓN POR DÍAS (CORRECTO)
-    for (const weekday of weekdays) {
+    // 🔥 FILTRO POR HORAS (CLAVE)
+    const filteredShifts = shifts.filter(shift =>
+      shift.startTime.startsWith(startTime) &&
+      shift.endTime.startsWith(endTime)
+    );
 
-      const shifts = await this.prisma.shift.findMany({
-        where: {
-          scheduleId,
-          weekday,
-          OR: [
-            { validTo: null },
-            { validTo: { gte: from } },
-          ],
-        },
-      });
+    console.log('🟢 SHIFTS FILTRADOS (MATCH HORAS):', filteredShifts.length, filteredShifts);
 
-      console.log('🔴 SHIFTS ENCONTRADOS:', shifts.length, shifts);
+    for (const shift of filteredShifts) {
+      const shiftStart = new Date(shift.validFrom);
 
-      for (const shift of shifts) {
-        const shiftStart = new Date(shift.validFrom);
+      // 🟡 histórico → cerrar
+      if (shiftStart < from) {
+        const dayBefore = new Date(from);
+        dayBefore.setDate(dayBefore.getDate() - 1);
 
-        // 🟡 histórico → cerrar
-        if (shiftStart < from) {
-          const dayBefore = new Date(from);
-          dayBefore.setDate(dayBefore.getDate() - 1);
-
-          await this.prisma.shift.update({
-            where: { id: shift.id },
-            data: { validTo: dayBefore },
-          });
-        }
-
-        // 🔵 futuro → borrar
-        else {
-          await this.prisma.shift.delete({
-            where: { id: shift.id },
-          });
-        }
-
-        totalAffected++;
+        await this.prisma.shift.update({
+          where: { id: shift.id },
+          data: { validTo: dayBefore },
+        });
       }
-    }
 
-    return { affected: totalAffected };
+      // 🔵 futuro → borrar
+      else {
+        await this.prisma.shift.delete({
+          where: { id: shift.id },
+        });
+      }
+
+      totalAffected++;
+    }
   }
+
+  return { affected: totalAffected };
+}
   /* ======================================================
    ELIMINAR VACACIONES
    - single: solo ese día
