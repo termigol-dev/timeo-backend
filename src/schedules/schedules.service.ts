@@ -627,7 +627,7 @@ export class SchedulesService {
   /* ======================================================
       ELIMINAR TURNOS (SEGÚN CONTEXTO) — VERSION CORREGIDA
    ====================================================== */
-  async deleteShift(op: {
+async deleteShift(op: {
   scheduleId: string;
   shiftId?: string;
   weekdays?: number[];
