@@ -237,7 +237,7 @@ export class UsersController {
 
 
 
-  /* ───────── BORRADO DEFINITIVO (SOLO PRUEBAS) ───────── */
+  /* ───────── BORRADO DEFINITIVO (SOLO PRUEBAS) ───────── 
   @Delete(':id/hard')
   @Roles(Role.SUPERADMIN)
   hardDelete(
@@ -248,5 +248,5 @@ export class UsersController {
       companyId,
       id,
     );
-  }
+  }*/
 }
