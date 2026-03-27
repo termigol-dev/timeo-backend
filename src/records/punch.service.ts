@@ -5,6 +5,7 @@ import {
   IncidentType,
   IncidentBy,
 } from '@prisma/client';
+import { DateTime } from 'luxon';
 
 @Injectable()
 export class PunchService {
@@ -70,7 +71,7 @@ export class PunchService {
         },
       });
     }
-    console.log('🔥 USING punchService');
+    
     return record;
   }
 
@@ -233,19 +234,24 @@ export class PunchService {
       .sort((a, b) => a.start - b.start)[0];
   }
 
-  private buildShiftDate(baseDate: Date, weekday: number, time: string) {
-    const d = new Date(baseDate);
-    const currentDay = d.getDay() === 0 ? 7 : d.getDay();
-    let diff = weekday - currentDay;
-    if (diff < 0) diff += 7;
+ private buildShiftDate(baseDate: Date, weekday: number, time: string) {
 
-    d.setDate(d.getDate() + diff);
+  const zone = 'Europe/Madrid';
 
-    const [h, m] = time.split(':').map(Number);
-    d.setHours(h, m, 0, 0);
+  const base = DateTime.fromJSDate(baseDate, { zone });
 
-    return d;
-  }
+  const currentDay = base.weekday; // 1 (lunes) - 7 (domingo)
+
+  let diff = weekday - currentDay;
+  if (diff < 0) diff += 7;
+
+  const [h, m] = time.split(':').map(Number);
+
+  return base
+    .plus({ days: diff })
+    .set({ hour: h, minute: m, second: 0, millisecond: 0 })
+    .toJSDate();
+}
 
   private async getActiveMembership(userId: string, companyId: string, branchId: string) {
     const membership = await this.prisma.membership.findFirst({
