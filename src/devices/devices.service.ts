@@ -12,24 +12,29 @@ export class DevicesService {
     platform: 'WEB' | 'ANDROID' | 'IOS',
   ) {
 
+    const parsed = JSON.parse(token);
+    const endpoint = parsed.endpoint;
+
     console.log('REGISTER / UPSERT DEVICE', {
       userId,
       platform,
-      tokenPreview: token?.substring(0, 40)
+      endpoint
     });
 
     return this.prisma.device.upsert({
       where: {
-        token: token
+        endpoint: endpoint
       },
       update: {
         userId: userId,
-        platform: platform
+        platform: platform,
+        token: token
       },
       create: {
         userId: userId,
         token: token,
-        platform: platform
+        platform: platform,
+        endpoint: endpoint
       }
     });
 

@@ -161,13 +161,12 @@ model Incident {
 /// ======================
 model Device {
   id        String   @id @default(cuid())
-
   userId    String
   user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
-
   platform  DevicePlatform
-  token     String   @unique
-
+  token     String
+  endpoint  String   @unique
+  
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
 
@@ -216,7 +215,6 @@ model Shift {
   @@index([weekday])
   @@index([validFrom])
   @@index([validTo])
-  
 }
 
 model ScheduleException {

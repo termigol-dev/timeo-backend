@@ -18,7 +18,6 @@ export class DevicesController {
 
     console.log("DEVICE REGISTER REQUEST");
     console.log("USER:", userId);
-    console.log("TOKEN:", body.token.substring(0, 80));
 
     return this.devicesService.registerDevice(
       userId,
