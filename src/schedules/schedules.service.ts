@@ -454,7 +454,7 @@ export class SchedulesService {
           isVacation,
         });
       }
-
+      console.log('🔥 EXCEPTIONS RAW:', schedule?.exceptions);
       return {
         scheduleId: schedule.id,
         weekStart: this.formatDateLocal(weekStart),
