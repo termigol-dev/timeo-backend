@@ -344,7 +344,7 @@ export class SchedulesService {
           exceptions: { include: { blocks: true } },
         },
       });
-
+      console.log('🔥 EXCEPTIONS RAW:', schedule?.exceptions);
       console.log('🧪 schedule loaded:', {
         id: schedule?.id,
         shifts: schedule?.shifts?.length,
@@ -377,9 +377,10 @@ export class SchedulesService {
         // ======================================================
         const exception = (schedule.exceptions || []).find(ex => {
           if (!ex?.date) return false;
-          const d = new Date(ex.date);
-          if (isNaN(d.getTime())) return false;
-          return this.formatDateLocal(d) === dateStr;
+
+          const exDateStr = ex.date.toISOString().slice(0, 10);
+
+          return exDateStr === dateStr;
         });
 
         let finalTurns: {
@@ -454,7 +455,7 @@ export class SchedulesService {
           isVacation,
         });
       }
-      console.log('🔥 EXCEPTIONS RAW:', schedule?.exceptions);
+
       return {
         scheduleId: schedule.id,
         weekStart: this.formatDateLocal(weekStart),
