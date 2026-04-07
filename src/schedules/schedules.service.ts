@@ -141,30 +141,22 @@ export class SchedulesService {
         throw new BadRequestException('No tocar pasado');
       }
 
-      // ================================
-      // 🔥 CREAR UN SHIFT POR CADA DÍA
-      // ================================
-      const createdShifts = [];
+      // 🔥 CREAR UN SOLO SHIFT (MODELO NUEVO)
+      const created = await this.prisma.shift.create({
+        data: {
+          scheduleId,
+          weekday: finalWeekdays[0], // legacy (puedes dejarlo)
+          weekdays: finalWeekdays,   // 🔥 ESTE ES EL IMPORTANTE
+          startTime,
+          endTime,
+          validFrom: fromDate,
+          validTo: toDate,
+        },
+      });
 
-      for (const wd of finalWeekdays) {
-        const created = await this.prisma.shift.create({
-          data: {
-            scheduleId,
-            weekday: wd,              // 🔁 mantenemos compatibilidad
-            weekdays: finalWeekdays,  // 🔥 nuevo campo clave
-            startTime,
-            endTime,
-            validFrom: fromDate,
-            validTo: toDate,
-          },
-        });
+      console.log('🟢 SHIFT CREADO (NUEVO MODELO):', created);
 
-        createdShifts.push(created);
-      }
-
-      console.log('🟢 SHIFTS CREADOS:', createdShifts);
-
-      return createdShifts;
+      return created;
 
     } catch (err) {
       console.error('❌ ERROR EN addShiftToSchedule:', err);
