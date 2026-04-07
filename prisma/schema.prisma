@@ -204,6 +204,7 @@ model Shift {
   scheduleId String
 
   weekday    Int    // 1 = lunes ... 7 = domingo
+  weekdays Int[] @default([]) //NUEVO MODELO DE PATRONES
   startTime  String // "09:00"
   endTime    String // "13:00"
   validFrom  DateTime
