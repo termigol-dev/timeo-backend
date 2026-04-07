@@ -450,7 +450,16 @@ export class SchedulesService {
               from.getTime() <= date.getTime() &&
               (!to || to.getTime() >= date.getTime());
 
-            return inRange && shift.weekday === weekday;
+            let matchesWeekday = false;
+
+            if (Array.isArray(shift.weekdays) && shift.weekdays.length > 0) {
+              matchesWeekday = shift.weekdays.includes(weekday);
+            } else {
+              // 🔵 fallback modelo antiguo
+              matchesWeekday = shift.weekday === weekday;
+            }
+
+            return inRange && matchesWeekday;
           });
 
           finalTurns = activeShifts.map(s => ({
