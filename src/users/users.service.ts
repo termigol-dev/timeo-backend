@@ -110,68 +110,68 @@ export class UsersService {
   }
 
   /* ───────── PERFIL GLOBAL (SIN companyId) ───────── */
- async getUserById(
-  requestUser: any,
-  userId: string,
-) {
+  async getUserById(
+    requestUser: any,
+    userId: string,
+  ) {
 
-  const user = await this.prisma.user.findUnique({
-    where: { id: userId },
-    include: {
-      memberships: {
-        include: {
-          company: true, // 🔥 AÑADIDO
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+      include: {
+        memberships: {
+          include: {
+            company: true, // 🔥 AÑADIDO
+          },
         },
       },
-    },
-  });
+    });
 
-  if (!user) {
-    throw new NotFoundException('Usuario no encontrado');
-  }
-
-  // 🔐 Seguridad
-  if (requestUser.role !== Role.SUPERADMIN) {
-
-    const belongs = user.memberships.some(
-      m => m.companyId === requestUser.companyId,
-    );
-
-    if (!belongs) {
-      throw new ForbiddenException(
-        'No tienes acceso a este usuario',
-      );
+    if (!user) {
+      throw new NotFoundException('Usuario no encontrado');
     }
-  }
 
-  const m =
-    requestUser.role === Role.SUPERADMIN
-      ? user.memberships[0]
-      : user.memberships.find(
+    // 🔐 Seguridad
+    if (requestUser.role !== Role.SUPERADMIN) {
+
+      const belongs = user.memberships.some(
+        m => m.companyId === requestUser.companyId,
+      );
+
+      if (!belongs) {
+        throw new ForbiddenException(
+          'No tienes acceso a este usuario',
+        );
+      }
+    }
+
+    const m =
+      requestUser.role === Role.SUPERADMIN
+        ? user.memberships[0]
+        : user.memberships.find(
           mm => mm.companyId === requestUser.companyId,
         );
 
-  if (!m) {
-    throw new NotFoundException('Usuario no encontrado');
+    if (!m) {
+      throw new NotFoundException('Usuario no encontrado');
+    }
+
+    return {
+      id: user.id,
+      name: user.name,
+      firstSurname: user.firstSurname,
+      secondSurname: user.secondSurname,
+      dni: user.dni,
+      email: user.email,
+      photoUrl: user.photoUrl,
+      role: m.role,
+      branchId: m.branchId,
+      active: m.active,
+      companyId: m.companyId,
+
+      // 🔥 NUEVO (CLAVE)
+      companyName: m.company?.commercialName || null,
+    };
   }
-
-  return {
-    id: user.id,
-    name: user.name,
-    firstSurname: user.firstSurname,
-    secondSurname: user.secondSurname,
-    dni: user.dni,
-    email: user.email,
-    photoUrl: user.photoUrl,
-    role: m.role,
-    branchId: m.branchId,
-    active: m.active,
-    companyId: m.companyId,
-
-    // 🔥 NUEVO (CLAVE)
-    companyName: m.company?.commercialName || null,
-  };
-}
 
   /* ───────── CREAR / REACTIVAR USUARIO ───────── */
 
@@ -377,22 +377,40 @@ export class UsersService {
       secondSurname?: string;
       dni?: string;
       email?: string;
+      password?: string;
     },
   ) {
 
     console.log('🧠 updateUser service', userId, data);
 
-    // opcional: aquí puedes meter luego control de permisos finos
+    // 🔧 Construimos objeto seguro (sin password aún)
+    const updateData: any = {
+      name: data.name,
+      firstSurname: data.firstSurname,
+      secondSurname: data.secondSurname,
+      dni: data.dni,
+      email: data.email,
+    };
+
+    // 🔐 Si viene password → la hasheamos
+    if (data.password && data.password.trim() !== '') {
+
+      const cleanPassword = data.password.trim();
+
+      console.log('🧪 PASSWORD LIMPIA:', cleanPassword);
+
+      const hashed = await bcrypt.hash(cleanPassword, 10);
+
+      console.log('🧪 HASH GENERADO:', hashed);
+
+      updateData.password = hashed;
+    }
+
+    console.log('🧪 DATA FINAL A GUARDAR:', updateData);
 
     return this.prisma.user.update({
       where: { id: userId },
-      data: {
-        name: data.name,
-        firstSurname: data.firstSurname,
-        secondSurname: data.secondSurname,
-        dni: data.dni,
-        email: data.email,
-      },
+      data: updateData,
     });
   }
 
