@@ -79,7 +79,8 @@ export class SchedulesService {
   async addShiftToSchedule(
     scheduleId: string,
     data: {
-      weekday: number;
+      weekday?: number;          // 🔥 ahora opcional
+      weekdays?: number[];       // 🔥 nuevo
       startTime: string;
       endTime: string;
       validFrom: string;
@@ -89,17 +90,30 @@ export class SchedulesService {
     try {
       console.log('🟡 ADD SHIFT SERVICE INPUT:', { scheduleId, data });
 
-      const { weekday, startTime, endTime, validFrom, validTo } = data;
+      const { weekday, weekdays, startTime, endTime, validFrom, validTo } = data;
+
+      // ================================
+      // 🧠 NORMALIZAR WEEKDAYS
+      // ================================
+      let finalWeekdays: number[] = [];
+
+      if (Array.isArray(weekdays) && weekdays.length > 0) {
+        finalWeekdays = weekdays;
+      } else if (weekday != null) {
+        finalWeekdays = [weekday];
+      } else {
+        throw new BadRequestException('Debe venir weekday o weekdays');
+      }
+
+      console.log('🧪 WEEKDAYS NORMALIZADOS:', finalWeekdays);
 
       // ================================
       // VALIDACIONES BÁSICAS
       // ================================
-      if (weekday == null || Number.isNaN(weekday)) {
-        throw new BadRequestException('Día inválido');
-      }
-
-      if (weekday < 1 || weekday > 7) {
-        throw new BadRequestException('weekday fuera de rango');
+      for (const wd of finalWeekdays) {
+        if (wd < 1 || wd > 7) {
+          throw new BadRequestException('weekday fuera de rango');
+        }
       }
 
       if (!startTime || !endTime || startTime >= endTime) {
@@ -128,27 +142,36 @@ export class SchedulesService {
       }
 
       // ================================
-      // INSERTAR SHIFT (SIN PENSAR)
+      // 🔥 CREAR UN SHIFT POR CADA DÍA
       // ================================
-      const created = await this.prisma.shift.create({
-        data: {
-          scheduleId,
-          weekday,
-          startTime,
-          endTime,
-          validFrom: fromDate,
-          validTo: toDate,
-        },
-      });
+      const createdShifts = [];
 
-      console.log('🟢 SHIFT CREADO:', created);
-      return created;
+      for (const wd of finalWeekdays) {
+        const created = await this.prisma.shift.create({
+          data: {
+            scheduleId,
+            weekday: wd,              // 🔁 mantenemos compatibilidad
+            weekdays: finalWeekdays,  // 🔥 nuevo campo clave
+            startTime,
+            endTime,
+            validFrom: fromDate,
+            validTo: toDate,
+          },
+        });
+
+        createdShifts.push(created);
+      }
+
+      console.log('🟢 SHIFTS CREADOS:', createdShifts);
+
+      return createdShifts;
 
     } catch (err) {
       console.error('❌ ERROR EN addShiftToSchedule:', err);
       throw err;
     }
   }
+
   /*=======================================================
        AÑADIR VACACIONES (BORRADOR)
     ====================================================== */
