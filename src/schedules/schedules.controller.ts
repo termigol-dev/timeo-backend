@@ -202,6 +202,32 @@ export class SchedulesController {
       body.exceptions,
     );
   }
+
+  /* ======================================================
+   🆕 BORRAR EXCEPCIÓN
+====================================================== */
+  @Delete(':scheduleId/exceptions')
+  @Roles(
+    Role.SUPERADMIN,
+    Role.ADMIN_EMPRESA,
+    Role.ADMIN_SUCURSAL,
+  )
+  deleteException(
+    @Param('scheduleId') scheduleId: string,
+    @Body() body: { date: string },
+  ) {
+    console.log('🗑️ DELETE EXCEPTION CONTROLLER:', {
+      scheduleId,
+      date: body.date,
+    });
+
+    return this.schedulesService.deleteException(
+      scheduleId,
+      body.date,
+    );
+  }
+
+
   /* ======================================================
      AÑADIR VACACIONES
   ====================================================== */

@@ -580,6 +580,17 @@ export class SchedulesService {
     return { ok: true };
   }
 
+  async deleteException(scheduleId: string, date: string) {
+    console.log('🗑️ DELETE EXCEPTION SERVICE', { scheduleId, date });
+
+    return this.prisma.scheduleException.deleteMany({
+      where: {
+        scheduleId,
+        date: new Date(date),
+      },
+    });
+  }
+
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
      ¿Tenía que trabajar este usuario en esta fecha?
