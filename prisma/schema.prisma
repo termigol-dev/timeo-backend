@@ -242,7 +242,7 @@ model ScheduleExceptionBlock {
   endTime      String
 
   exception    ScheduleException @relation(fields: [exceptionId], references: [id])
-
+  deleted      Boolean @default(false)
   @@index([exceptionId])
 }
 

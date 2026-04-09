@@ -497,7 +497,7 @@ export class SchedulesService {
     exceptions: {
       type: 'EXTRA_SHIFT' | 'MODIFIED_SHIFT' | 'DAY_OFF' | 'VACATION';
       date: string;
-      blocks?: { startTime: string; endTime: string }[];
+      blocks?: { startTime: string; endTime: string; deleted?: boolean }[];
       mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
     }[],
   ) {
@@ -568,7 +568,8 @@ export class SchedulesService {
             exceptionId: exception.id,
             startTime: b.startTime,
             endTime: b.endTime,
-          })),
+            deleted: b.deleted || false // 🔥 AÑADIR ESTO
+          }))
         });
 
         console.log('🧱 BLOCKS CREATED', ex.blocks);
