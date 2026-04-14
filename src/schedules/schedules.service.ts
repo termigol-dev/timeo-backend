@@ -498,6 +498,7 @@ export class SchedulesService {
   }
 
   async addExceptions(
+
     scheduleId: string,
     exceptions: {
       type: 'EXTRA_SHIFT' | 'MODIFIED_SHIFT' | 'DAY_OFF' | 'VACATION';
@@ -506,7 +507,8 @@ export class SchedulesService {
       mode?: 'ONLY_THIS_BLOCK' | 'FROM_THIS_DAY_ON';
     }[],
   ) {
-
+    console.log('🔥 ADD EXCEPTIONS LLAMADO');
+    console.log('🧪 EXCEPTIONS PAYLOAD:', exceptions);
     for (const ex of exceptions) {
 
       console.log('🧪 EXCEPTION INPUT', ex);
