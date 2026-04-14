@@ -562,7 +562,10 @@ export class SchedulesService {
         },
       });
 
-      console.log('✅ EXCEPTION CREATED', exception.id);
+      console.log('🧪 GUARDANDO EXCEPTION:', {
+        date: ex.date,
+        blocks: ex.blocks
+      });
 
       // =====================================================
       // 🧱 4. CREAR BLOQUES (si existen)
