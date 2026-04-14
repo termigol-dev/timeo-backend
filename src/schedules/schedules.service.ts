@@ -571,6 +571,7 @@ export class SchedulesService {
       // 🧱 4. CREAR BLOQUES (si existen)
       // =====================================================
       if (ex.blocks && ex.blocks.length > 0) {
+        console.log('🧪 CREATING BLOCKS IN DB:', ex.blocks);
         await this.prisma.scheduleExceptionBlock.createMany({
           data: ex.blocks.map(b => ({
             exceptionId: exception.id,
