@@ -411,7 +411,11 @@ export class SchedulesService {
         // 🔴 2. EXCEPCIÓN
         // ======================================================
         if (exception) {
-
+          console.log('🔥 EXCEPTION DETECTADA:', {
+            date: dateStr,
+            type: exception.type,
+            blocks: exception.blocks
+          });
           const blocks = Array.isArray(exception.blocks)
             ? exception.blocks
             : null;
@@ -428,6 +432,7 @@ export class SchedulesService {
               startTime: b.startTime,
               endTime: b.endTime,
               source: 'modified',
+              deleted: b.deleted || false // 🔥 CLAVE ABSOLUTA
             }));
           }
 
