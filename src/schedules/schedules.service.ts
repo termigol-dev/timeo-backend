@@ -482,6 +482,7 @@ export class SchedulesService {
           weekday,
           turns: finalTurns,
           isVacation,
+          hasException: !!exception 
         });
       }
 
