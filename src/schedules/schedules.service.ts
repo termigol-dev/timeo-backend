@@ -300,192 +300,192 @@ export class SchedulesService {
   /* ======================================================
    OBTENER HORARIO ACTIVO
 ====================================================== */
- async getActiveSchedule(userId: string, weekStartStr?: string) {
-  try {
-    console.log('🧪 SERVICE getActiveSchedule START', { userId, weekStartStr });
+  async getActiveSchedule(userId: string, weekStartStr?: string) {
+    try {
+      console.log('🧪 SERVICE getActiveSchedule START', { userId, weekStartStr });
 
-    const mergeTurns = (turns: any[] = []) => {
-      if (!Array.isArray(turns) || turns.length === 0) return [];
+      const mergeTurns = (turns: any[] = []) => {
+        if (!Array.isArray(turns) || turns.length === 0) return [];
 
-      const sorted = [...turns].sort((a, b) =>
-        (a.startTime || '').localeCompare(b.startTime || '')
-      );
+        const sorted = [...turns].sort((a, b) =>
+          (a.startTime || '').localeCompare(b.startTime || '')
+        );
 
-      const merged = [{ ...sorted[0] }];
+        const merged = [{ ...sorted[0] }];
 
-      for (let i = 1; i < sorted.length; i++) {
-        const last = merged[merged.length - 1];
-        const cur = sorted[i];
+        for (let i = 1; i < sorted.length; i++) {
+          const last = merged[merged.length - 1];
+          const cur = sorted[i];
 
-        if (cur.startTime <= last.endTime) {
-          if (cur.endTime > last.endTime) {
-            last.endTime = cur.endTime;
+          if (cur.startTime <= last.endTime) {
+            if (cur.endTime > last.endTime) {
+              last.endTime = cur.endTime;
+            }
+          } else {
+            merged.push({ ...cur });
           }
-        } else {
-          merged.push({ ...cur });
         }
+
+        return merged;
+      };
+
+      let weekStart: Date;
+
+      const base = weekStartStr ? new Date(weekStartStr) : new Date();
+      base.setHours(0, 0, 0, 0);
+
+      const jsDay = base.getDay();
+      const offset = jsDay === 0 ? -6 : 1 - jsDay;
+
+      base.setDate(base.getDate() + offset);
+      weekStart = base;
+
+      const weekEnd = new Date(weekStart);
+      weekEnd.setDate(weekStart.getDate() + 6);
+      weekEnd.setHours(23, 59, 59, 999);
+
+      const schedule = await this.prisma.schedule.findFirst({
+        where: {
+          userId,
+          validFrom: { lte: weekEnd },
+          OR: [
+            { validTo: null },
+            { validTo: { gte: weekStart } },
+          ],
+        },
+        orderBy: { validFrom: 'desc' },
+        include: {
+          shifts: true,
+          exceptions: { include: { blocks: true } },
+        },
+      });
+
+      console.log('🔥 EXCEPTIONS RAW:', schedule?.exceptions);
+      console.log('🧪 schedule loaded:', {
+        id: schedule?.id,
+        shifts: schedule?.shifts?.length,
+        exceptions: schedule?.exceptions?.length,
+      });
+
+      if (!schedule) {
+        return {
+          scheduleId: null,
+          weekStart: this.formatDateLocal(weekStart),
+          days: [],
+        };
       }
 
-      return merged;
-    };
+      const days = [];
 
-    let weekStart: Date;
+      for (let i = 0; i < 7; i++) {
 
-    const base = weekStartStr ? new Date(weekStartStr) : new Date();
-    base.setHours(0, 0, 0, 0);
+        const date = new Date(weekStart);
+        date.setDate(weekStart.getDate() + i);
+        date.setHours(0, 0, 0, 0);
 
-    const jsDay = base.getDay();
-    const offset = jsDay === 0 ? -6 : 1 - jsDay;
+        const dateStr = this.formatDateLocal(date);
 
-    base.setDate(base.getDate() + offset);
-    weekStart = base;
+        const jsDay = date.getDay();
+        const weekday = jsDay === 0 ? 7 : jsDay;
 
-    const weekEnd = new Date(weekStart);
-    weekEnd.setDate(weekStart.getDate() + 6);
-    weekEnd.setHours(23, 59, 59, 999);
+        // ======================================================
+        // 🆕 🔥 PATRÓN (SIEMPRE)
+        // ======================================================
+        const patternTurns = (schedule.shifts || []).filter(shift => {
 
-    const schedule = await this.prisma.schedule.findFirst({
-      where: {
-        userId,
-        validFrom: { lte: weekEnd },
-        OR: [
-          { validTo: null },
-          { validTo: { gte: weekStart } },
-        ],
-      },
-      orderBy: { validFrom: 'desc' },
-      include: {
-        shifts: true,
-        exceptions: { include: { blocks: true } },
-      },
-    });
+          if (!shift.validFrom) return false;
 
-    console.log('🔥 EXCEPTIONS RAW:', schedule?.exceptions);
-    console.log('🧪 schedule loaded:', {
-      id: schedule?.id,
-      shifts: schedule?.shifts?.length,
-      exceptions: schedule?.exceptions?.length,
-    });
+          const from = new Date(shift.validFrom);
+          from.setHours(0, 0, 0, 0);
 
-    if (!schedule) {
-      return {
-        scheduleId: null,
-        weekStart: this.formatDateLocal(weekStart),
-        days: [],
-      };
-    }
+          const to = shift.validTo ? new Date(shift.validTo) : null;
+          if (to) to.setHours(0, 0, 0, 0);
 
-    const days = [];
+          const inRange =
+            from.getTime() <= date.getTime() &&
+            (!to || to.getTime() >= date.getTime());
 
-    for (let i = 0; i < 7; i++) {
+          let matchesWeekday = false;
 
-      const date = new Date(weekStart);
-      date.setDate(weekStart.getDate() + i);
-      date.setHours(0, 0, 0, 0);
+          if (Array.isArray(shift.weekdays) && shift.weekdays.length > 0) {
+            matchesWeekday = shift.weekdays.includes(weekday);
+          } else {
+            matchesWeekday = shift.weekday === weekday;
+          }
 
-      const dateStr = this.formatDateLocal(date);
-
-      const jsDay = date.getDay();
-      const weekday = jsDay === 0 ? 7 : jsDay;
-
-      // ======================================================
-      // 🆕 🔥 PATRÓN (SIEMPRE)
-      // ======================================================
-      const patternTurns = (schedule.shifts || []).filter(shift => {
-
-        if (!shift.validFrom) return false;
-
-        const from = new Date(shift.validFrom);
-        from.setHours(0, 0, 0, 0);
-
-        const to = shift.validTo ? new Date(shift.validTo) : null;
-        if (to) to.setHours(0, 0, 0, 0);
-
-        const inRange =
-          from.getTime() <= date.getTime() &&
-          (!to || to.getTime() >= date.getTime());
-
-        let matchesWeekday = false;
-
-        if (Array.isArray(shift.weekdays) && shift.weekdays.length > 0) {
-          matchesWeekday = shift.weekdays.includes(weekday);
-        } else {
-          matchesWeekday = shift.weekday === weekday;
-        }
-
-        return inRange && matchesWeekday;
-      });
-
-      // ======================================================
-      // 🔥 EXCEPCIÓN
-      // ======================================================
-      const exception = (schedule.exceptions || []).find(ex => {
-        if (!ex?.date) return false;
-        return ex.date.toISOString().slice(0, 10) === dateStr;
-      });
-
-      let finalTurns: any[] = [];
-      let isVacation = false;
-
-      if (exception) {
-
-        console.log('🔥 EXCEPTION DETECTADA:', {
-          date: dateStr,
-          type: exception.type,
-          blocks: exception.blocks
+          return inRange && matchesWeekday;
         });
 
-        const blocks = Array.isArray(exception.blocks)
-          ? exception.blocks
-          : null;
+        // ======================================================
+        // 🔥 EXCEPCIÓN
+        // ======================================================
+        const exception = (schedule.exceptions || []).find(ex => {
+          if (!ex?.date) return false;
+          return ex.date.toISOString().slice(0, 10) === dateStr;
+        });
 
-        if (exception.type === 'DAY_OFF') {
-          finalTurns = [];
-          isVacation = true;
-        }
+        let finalTurns: any[] = [];
+        let isVacation = false;
 
-        else if (blocks !== null) {
-          finalTurns = blocks.map(b => ({
-            startTime: b.startTime,
-            endTime: b.endTime,
-            source: 'modified',
-            deleted: b.deleted || false
+        if (exception) {
+
+          console.log('🔥 EXCEPTION DETECTADA:', {
+            date: dateStr,
+            type: exception.type,
+            blocks: exception.blocks
+          });
+
+          const blocks = Array.isArray(exception.blocks)
+            ? exception.blocks
+            : null;
+
+          if (exception.type === 'DAY_OFF') {
+            finalTurns = [];
+            isVacation = true;
+          }
+
+          else if (blocks !== null) {
+            finalTurns = blocks.map(b => ({
+              startTime: b.startTime,
+              endTime: b.endTime,
+              source: 'modified',
+              deleted: b.deleted || false
+            }));
+          }
+
+        } else {
+
+          finalTurns = patternTurns.map(s => ({
+            id: s.id,
+            startTime: s.startTime,
+            endTime: s.endTime,
+            source: 'regular',
           }));
         }
 
-      } else {
+        finalTurns = mergeTurns(finalTurns);
 
-        finalTurns = patternTurns.map(s => ({
-          id: s.id,
-          startTime: s.startTime,
-          endTime: s.endTime,
-          source: 'regular',
-        }));
+        days.push({
+          date: dateStr,
+          weekday,
+          turns: finalTurns,     // 🔒 tu sistema actual
+          patternTurns,          // 🆕 CLAVE
+          isVacation,
+          hasException: !!exception
+        });
       }
 
-      finalTurns = mergeTurns(finalTurns);
+      return {
+        scheduleId: schedule.id,
+        weekStart: this.formatDateLocal(weekStart),
+        days,
+      };
 
-      days.push({
-        date: dateStr,
-        weekday,
-        turns: finalTurns,     // 🔒 tu sistema actual
-        patternTurns,          // 🆕 CLAVE
-        isVacation,
-        hasException: !!exception
-      });
+    } catch (e) {
+      console.error('🔥 getActiveSchedule CRASH:', e);
+      throw e;
     }
-
-    return {
-      scheduleId: schedule.id,
-      weekStart: this.formatDateLocal(weekStart),
-      days,
-    };
-
-  } catch (e) {
-    console.error('🔥 getActiveSchedule CRASH:', e);
-    throw e;
   }
-}
 
   async addExceptions(
 
@@ -585,6 +585,24 @@ export class SchedulesService {
   async deleteException(scheduleId: string, date: string) {
     console.log('🗑️ DELETE EXCEPTION SERVICE', { scheduleId, date });
 
+    const exception = await this.prisma.scheduleException.findFirst({
+      where: {
+        scheduleId,
+        date: new Date(date),
+      },
+      select: { id: true },
+    });
+
+    if (!exception) return;
+
+    // 🔴 1. borrar bloques hijos
+    await this.prisma.scheduleExceptionBlock.deleteMany({
+      where: {
+        exceptionId: exception.id,
+      },
+    });
+
+    // 🔴 2. borrar excepción
     return this.prisma.scheduleException.deleteMany({
       where: {
         scheduleId,
