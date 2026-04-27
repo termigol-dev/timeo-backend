@@ -917,4 +917,66 @@ export class UsersService {
       throw error;
     }
   }
+
+  async registerCompanyAdmin(body: any) {
+    /* ────── EMAIL DUPLICADO ────── */
+    if (body.email) {
+      const existingEmailUser = await this.prisma.user.findFirst({
+        where: { email: body.email },
+      });
+
+      if (existingEmailUser) {
+        throw new ForbiddenException({
+          code: 'EMAIL_EXISTS',
+          message: `Este email ya existe. Contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
+        });
+      }
+    }
+
+    /* ────── DNI DUPLICADO ────── */
+    if (body.dni) {
+      const existingUser = await this.prisma.user.findFirst({
+        where: { dni: body.dni },
+      });
+
+      if (existingUser) {
+        throw new ForbiddenException({
+          code: 'DNI_EXISTS',
+          message: `Este DNI ya existe. Contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
+        });
+      }
+    }
+
+    /* ────── PASSWORD OBLIGATORIA ────── */
+    if (!body.password || body.password.length < 6) {
+      throw new ForbiddenException(
+        'La contraseña es obligatoria y debe tener al menos 6 caracteres',
+      );
+    }
+
+    const passwordHash = await bcrypt.hash(body.password, 10);
+
+    /* ────── CREAR USUARIO (SIN MEMBERSHIP) ────── */
+    const user = await this.prisma.user.create({
+      data: {
+        name: body.name,
+        firstSurname: body.firstSurname,
+        secondSurname: body.secondSurname || null,
+        dni: body.dni,
+        email: body.email,
+        password: passwordHash,
+        active: true,
+        photoUrl: body.photoUrl || null,
+      },
+    });
+
+    return {
+      id: user.id,
+      email: user.email,
+      name: user.name,
+      firstSurname: user.firstSurname,
+      photoUrl: user.photoUrl,
+    };
+  }
 }
+

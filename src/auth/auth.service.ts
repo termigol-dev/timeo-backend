@@ -4,6 +4,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
+import { UsersService } from '../users/users.service'; // 👈 AÑADIDO
 import * as bcrypt from 'bcryptjs';
 
 @Injectable()
@@ -11,6 +12,7 @@ export class AuthService {
   constructor(
     private prisma: PrismaService,
     private jwt: JwtService,
+    private usersService: UsersService, // 👈 AÑADIDO
   ) {}
 
   async login(email: string, password: string) {
@@ -34,7 +36,6 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
-    // 👉 elegimos la membership de mayor nivel
     const membership = user.memberships
       .sort((a, b) => {
         const priority = {
@@ -55,36 +56,28 @@ export class AuthService {
 
     const token = this.jwt.sign(payload);
 
-    /* ======================================================
-       🧠 OBTENER EMPRESA (según tu modelo real)
-    ====================================================== */
-
     let companyName: string | null = null;
 
     if (membership?.companyId) {
       const company = await this.prisma.company.findUnique({
         where: { id: membership.companyId },
-        select: {  commercialName: true },
+        select: { commercialName: true },
       });
 
       companyName = company?.commercialName ?? null;
     }
-
-    /* ======================================================
-       🎯 RESPONSE FINAL
-    ====================================================== */
 
     const response = {
       token,
       user: {
         id: user.id,
         name: user.name,
-        lastName: user.firstSurname ?? null, // ✅ añadido
+        lastName: user.firstSurname ?? null,
         email: user.email,
         role: payload.role,
         companyId: payload.companyId,
         branchId: payload.branchId,
-        companyName, // ✅ añadido
+        companyName,
         photoUrl: user.photoUrl ?? null,
       },
     };
@@ -92,5 +85,19 @@ export class AuthService {
     console.log('✅ LOGIN RESPONSE (BACKEND):', response);
 
     return response;
+  }
+
+  async register(body: any) {
+    const user = await this.usersService.registerCompanyAdmin(body);
+
+    const token = this.jwt.sign({ // 👈 IMPORTANTE: usar this.jwt
+      sub: user.id,
+      email: user.email,
+    });
+
+    return {
+      token,
+      user,
+    };
   }
 }
