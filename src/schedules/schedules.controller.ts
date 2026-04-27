@@ -216,10 +216,9 @@ export class SchedulesController {
     @Param('scheduleId') scheduleId: string,
     @Body() body: { date: string },
   ) {
-    console.log('🗑️ DELETE EXCEPTION CONTROLLER:', {
-      scheduleId,
-      date: body.date,
-    });
+    console.log('🧪 BODY COMPLETO:', body);
+    console.log('🧪 DATE RAW:', body?.date);
+    console.log('🧪 DATE TYPE:', typeof body?.date);
 
     return this.schedulesService.deleteException(
       scheduleId,
