@@ -17,6 +17,7 @@ model Company {
   commercialName String
   address        String
   plan           String
+  logoUrl        String?      @db.Text
   active         Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt

@@ -68,56 +68,59 @@ export class CompaniesService {
 
   /* ───────── ACTUALIZAR EMPRESA (NUEVO) ───────── */
 
-  async update(
-    companyId: string,
-    user: any,
-    data: any,
-  ) {
-    const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
-    });
+ async update(
+  companyId: string,
+  user: any,
+  data: any,
+) {
+  const company = await this.prisma.company.findUnique({
+    where: { id: companyId },
+  });
 
-    if (!company) {
-      throw new NotFoundException('Empresa no encontrada');
-    }
-
-    // Permisos base
-    if (
-      user.role !== Role.SUPERADMIN &&
-      user.role !== Role.ADMIN_EMPRESA
-    ) {
-      throw new ForbiddenException();
-    }
-
-    // ADMIN_EMPRESA solo su empresa
-    if (
-      user.role === Role.ADMIN_EMPRESA &&
-      user.companyId !== companyId
-    ) {
-      throw new ForbiddenException(
-        'No tienes permiso para editar esta empresa',
-      );
-    }
-
-    // Payload seguro
-    const payload: any = {
-      commercialName: data.commercialName,
-      address: data.address,
-      plan: data.plan,
-    };
-
-    // 🔐 SOLO SUPERADMIN
-    if (user.role === Role.SUPERADMIN) {
-      payload.legalName = data.legalName;
-      payload.nif = data.nif;
-    }
-
-    return this.prisma.company.update({
-      where: { id: companyId },
-      data: payload,
-    });
+  if (!company) {
+    throw new NotFoundException('Empresa no encontrada');
   }
-  /* ───────── CREAR EMPRESA ───────── */
+
+  // Permisos base
+  if (
+    user.role !== Role.SUPERADMIN &&
+    user.role !== Role.ADMIN_EMPRESA
+  ) {
+    throw new ForbiddenException();
+  }
+
+  // ADMIN_EMPRESA solo su empresa
+  if (
+    user.role === Role.ADMIN_EMPRESA &&
+    user.companyId !== companyId
+  ) {
+    throw new ForbiddenException(
+      'No tienes permiso para editar esta empresa',
+    );
+  }
+
+  // Payload seguro
+  const payload: any = {
+    commercialName: data.commercialName,
+    address: data.address,
+    plan: data.plan || company.plan || 'FREE',
+    logoUrl: data.logoUrl ?? company.logoUrl ?? null, // 👈 añadido
+  };
+
+  // 🔐 SOLO SUPERADMIN
+  if (user.role === Role.SUPERADMIN) {
+    payload.legalName = data.legalName;
+    payload.nif = data.nif;
+  }
+
+  return this.prisma.company.update({
+    where: { id: companyId },
+    data: payload,
+  });
+}
+
+
+/* ───────── CREAR EMPRESA ───────── */
 
 async create(user: any, data: any) {
   if (user.role !== Role.SUPERADMIN) {
@@ -132,7 +135,8 @@ async create(user: any, data: any) {
       commercialName: data.commercialName,
       nif: data.nif,
       address: data.address,
-      plan: data.plan ?? 'BASIC',
+      plan: data.plan || 'FREE', // 👈 cambio aquí
+      logoUrl: data.logoUrl || null, // 👈 añadido
       active: true,
     },
   });
