@@ -13,7 +13,7 @@ import { AuthGuard } from '@nestjs/passport';
 export class AuthController {
   constructor(private readonly authService: AuthService) { }
   @Get('me')
-  @UseGuards(AuthGuard)
+  @UseGuards(AuthGuard('jwt'))
   getMe(@Req() req) {
     return this.authService.getMe(req.user.id);
   }
