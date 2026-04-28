@@ -124,8 +124,6 @@ export class CompaniesService {
 
 async create(user: any, data: any) {
 
-  // ❌ BORRA cualquier check de SUPERADMIN
-
   const company = await this.prisma.company.create({
     data: {
       legalName: data.legalName,
@@ -138,7 +136,16 @@ async create(user: any, data: any) {
     },
   });
 
-  // 🔥 ESTO ES LO QUE TE FALTABA
+  // 🔥 USAR EL NOMBRE DEL FORMULARIO
+  const branch = await this.prisma.branch.create({
+    data: {
+      name: data.branchName || 'Principal',
+      address: data.branchAddress || data.address,
+      companyId: company.id,
+      active: true,
+    },
+  });
+
   await this.prisma.membership.create({
     data: {
       userId: user.id,
