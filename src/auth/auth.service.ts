@@ -13,7 +13,7 @@ export class AuthService {
     private prisma: PrismaService,
     private jwt: JwtService,
     private usersService: UsersService, // 👈 AÑADIDO
-  ) {}
+  ) { }
 
   async login(email: string, password: string) {
     console.log('🔐 LOGIN ATTEMPT', email);
@@ -85,6 +85,26 @@ export class AuthService {
     console.log('✅ LOGIN RESPONSE (BACKEND):', response);
 
     return response;
+  }
+
+  async getMe(userId: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId, active: true },
+      include: { company: true },
+    });
+
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      companyId: membership?.companyId || null,
+      companyName: membership?.company?.commercialName || null,
+      role: membership?.role || 'NO_ROLE',
+    };
   }
 
   async register(body: any) {

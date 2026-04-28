@@ -1,9 +1,22 @@
-import { Controller, Post, Body } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Body,
+  Get,
+  UseGuards,
+  Req,
+} from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { AuthGuard } from '@nestjs/passport';
 
 @Controller('auth')
 export class AuthController {
   constructor(private readonly authService: AuthService) { }
+  @Get('me')
+  @UseGuards(AuthGuard)
+  getMe(@Req() req) {
+    return this.authService.getMe(req.user.id);
+  }
 
   @Post('login')
   async login(@Body() body) {
@@ -18,9 +31,11 @@ export class AuthController {
 
     return result;
   }
-  
+
   @Post('register')
   register(@Body() body) {
     return this.authService.register(body);
   }
+
+
 }
