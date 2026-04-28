@@ -123,23 +123,30 @@ export class CompaniesService {
 /* ───────── CREAR EMPRESA ───────── */
 
 async create(user: any, data: any) {
-  if (user.role !== Role.SUPERADMIN) {
-    throw new ForbiddenException(
-      'Solo SUPERADMIN puede crear empresas',
-    );
-  }
 
-  return this.prisma.company.create({
+  const company = await this.prisma.company.create({
     data: {
       legalName: data.legalName,
       commercialName: data.commercialName,
       nif: data.nif,
       address: data.address,
-      plan: data.plan || 'FREE', // 👈 cambio aquí
-      logoUrl: data.logoUrl || null, // 👈 añadido
+      plan: data.plan || 'FREE',
+      logoUrl: data.logoUrl || null,
       active: true,
     },
   });
+
+  // 🔥 crear membership automáticamente
+  await this.prisma.membership.create({
+    data: {
+      userId: user.id,
+      companyId: company.id,
+      role: Role.ADMIN_EMPRESA,
+      active: true,
+    },
+  });
+
+  return company;
 }
 
 /* ───────── BORRADO DEFINITIVO ───────── */
