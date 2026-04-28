@@ -68,7 +68,6 @@ export class CompaniesController {
   /* ───────── CREAR EMPRESA (DEBUG) ───────── */
 
   @Post()
-  @Roles(Role.SUPERADMIN)
   async create(@Req() req, @Body() body) {
     console.log('🔥 POST /companies HIT');
     console.log('👤 USER:', req.user);
