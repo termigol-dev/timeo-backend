@@ -87,25 +87,25 @@ export class AuthService {
     return response;
   }
 
-  async getMe(userId: string) {
-    const membership = await this.prisma.membership.findFirst({
-      where: { userId, active: true },
-      include: { company: true },
-    });
+ async getMe(userId: string) {
+  const membership = await this.prisma.membership.findFirst({
+    where: { userId, active: true },
+    include: { company: true },
+  });
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
-    });
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+  });
 
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      companyId: membership?.companyId || null,
-      companyName: membership?.company?.commercialName || null,
-      role: membership?.role || 'NO_ROLE',
-    };
-  }
+  return {
+    id: user.id,
+    name: user.name,
+    email: user.email,
+    companyId: membership?.companyId || null,
+    companyName: membership?.company?.commercialName || null,
+    role: membership?.role || 'NO_ROLE',
+  };
+}
 
   async register(body: any) {
     const user = await this.usersService.registerCompanyAdmin(body);
