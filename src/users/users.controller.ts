@@ -132,6 +132,8 @@ export class UsersController {
     @Param('companyId') companyId: string,
     @Body() body,
   ) {
+    console.log('👤 USER:', req.user);
+    console.log('🏢 MEMBERSHIPS:', req.user.memberships);
     return this.usersService.createInCompany(
       req.user,
       companyId,
