@@ -154,16 +154,9 @@ export class CompaniesService {
     },
   });
 
-  const updatedUser = await this.prisma.user.update({
-    where: { id: user.id },
-    data: {
-      companyId: company.id,
-    },
-  });
-
   return {
     company,
-    user: updatedUser,
+    user,
     role: Role.ADMIN_EMPRESA,
   };
 }

@@ -86,7 +86,7 @@ async create(@Req() req, @Body() body) {
     role: req.user.role === Role.SUPERADMIN
   ? Role.SUPERADMIN
   : result.role,
-    companyId: u.companyId,
+    companyId: result.company.id,
     branchId: null,
   };
 
