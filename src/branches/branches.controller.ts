@@ -27,6 +27,7 @@ export class BranchesController {
   /* =====================
      LISTAR SUCURSALES
   ====================== */
+
   @Get()
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   findAll(
@@ -39,7 +40,7 @@ export class BranchesController {
   /* =====================
        LISTAR SUCURSALES AL CREAR EL PRIMER EMPLEADO
     ====================== */
-  @UseGuards()
+  
   @Get('public')
   async getPublicBranches(@Param('companyId') companyId: string) {
     return this.prisma.branch.findMany({
