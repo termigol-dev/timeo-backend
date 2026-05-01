@@ -235,8 +235,14 @@ export class UsersController {
     );
   }
 
-  /* ───────── ACTUALIZAR USUARIO ───────── */
-
+  /* ───────── ENVIAR MAIL ───────── */
+@Post(':id/send-invite')
+async sendInvite(
+  @Param('id') id: string,
+  @Body() body: { password: string }
+) {
+  return this.usersService.sendInvite(id, body.password);
+}
 
 
   /* ───────── BORRADO DEFINITIVO (SOLO PRUEBAS) ───────── 

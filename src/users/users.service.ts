@@ -9,6 +9,7 @@ import cloudinary from '../common/cloudinary';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
+import { MailService } from '../mail/mail.service';
 
 /* ───────── CONFIG ───────── */
 const SUPERADMIN_EMAIL =
@@ -26,8 +27,10 @@ function roleLevel(role: Role) {
 
 @Injectable()
 export class UsersService {
-  constructor(private prisma: PrismaService) { }
-
+ constructor(
+  private prisma: PrismaService,
+  private readonly mailService: MailService,
+) {}
   /* ───────── HELPERS ───────── */
 
   private async getMembership(
@@ -978,5 +981,20 @@ export class UsersService {
       photoUrl: user.photoUrl,
     };
   }
+
+  async sendInvite(userId: string, password: string) {
+  const user = await this.prisma.user.findUnique({
+    where: { id: userId },
+  });
+
+  if (!user) {
+    throw new Error('Usuario no encontrado');
+  }
+
+  // 👉 delegas TODO en MailService
+  await this.mailService.sendInvite(user.email, password);
+
+  return { ok: true };
+}
 }
 
