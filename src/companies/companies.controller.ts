@@ -72,30 +72,29 @@ export class CompaniesController {
   /* ───────── CREAR EMPRESA (FIX TOKEN) ───────── */
 
   @Post()
-  async create(@Req() req, @Body() body) {
-    console.log('🔥 POST /companies HIT');
-    console.log('👤 USER:', req.user);
-    console.log('📦 BODY:', body);
+async create(@Req() req, @Body() body) {
+  console.log('🔥 POST /companies HIT');
+  console.log('👤 USER:', req.user);
+  console.log('📦 BODY:', body);
 
-    // 👇 LLAMADA A SERVICE (OJO ORDEN)
-    const result = await this.companiesService.create(req.user, body);
+  const result = await this.companiesService.create(req.user, body);
 
-    // 👇 NUEVO TOKEN CON ROLE ACTUALIZADO
-    const u = result.user as any;
+  const u = result.user as any;
 
-    const payload = {
-      sub: u.id,
-      role: u.role,
-      companyId: u.companyId,
-      branchId: null,
-    };
-    const token = this.jwtService.sign(payload);
+  const payload = {
+    sub: u.id,
+    role: result.role,
+    companyId: u.companyId,
+    branchId: null,
+  };
 
-    return {
-      token,
-      user: result.user,
-    };
-  }
+  const token = this.jwtService.sign(payload);
+
+  return {
+    token,
+    user: result.user,
+  };
+}
 
   /* ───────── BORRADO DEFINITIVO (TEST) ───────── */
 
