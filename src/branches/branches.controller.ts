@@ -9,6 +9,7 @@ import {
   Req,
   UseGuards,
 } from '@nestjs/common';
+import { PrismaService } from '../prisma/prisma.service';
 import { BranchesService } from './branches.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
@@ -18,9 +19,10 @@ import { Role } from '@prisma/client';
 @Controller('companies/:companyId/branches')
 @UseGuards(JwtGuard, RolesGuard)
 export class BranchesController {
-  constructor(
-    private readonly branchesService: BranchesService,
-  ) {}
+ constructor(
+  private readonly branchesService: BranchesService,
+  private readonly prisma: PrismaService,
+) {}
 
   /* =====================
      LISTAR SUCURSALES
@@ -33,6 +35,19 @@ export class BranchesController {
   ) {
     return this.branchesService.findAll(companyId, req.user);
   }
+
+  /* =====================
+       LISTAR SUCURSALES AL CREAR EL PRIMER EMPLEADO
+    ====================== */
+  @UseGuards()
+  @Get('public')
+  async getPublicBranches(@Param('companyId') companyId: string) {
+    return this.prisma.branch.findMany({
+      where: { companyId },
+      orderBy: { name: 'asc' },
+    });
+  }
+
 
   /* =====================
      CREAR SUCURSAL
