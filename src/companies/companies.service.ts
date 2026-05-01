@@ -136,7 +136,6 @@ async create(user: any, data: any) {
     },
   });
 
-  // 🔥 USAR EL NOMBRE DEL FORMULARIO
   const branch = await this.prisma.branch.create({
     data: {
       name: data.branchName || 'Principal',
@@ -155,7 +154,20 @@ async create(user: any, data: any) {
     },
   });
 
-  return company;
+  // 🔥 NUEVO: actualizar el usuario
+  const updatedUser = await this.prisma.user.update({
+    where: { id: user.id },
+    data: {
+      role: Role.ADMIN_EMPRESA,
+      companyId: company.id,
+    },
+  });
+
+  // 🔥 NUEVO: devolver user + company
+  return {
+    company,
+    user: updatedUser,
+  };
 }
 
 /* ───────── BORRADO DEFINITIVO ───────── */

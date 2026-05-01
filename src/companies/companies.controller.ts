@@ -15,11 +15,15 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
+import { JwtService } from '@nestjs/jwt'; // 👈 AÑADIDO
 
 @Controller('companies')
 @UseGuards(JwtGuard, RolesGuard)
 export class CompaniesController {
-  constructor(private readonly companiesService: CompaniesService) {}
+  constructor(
+    private readonly companiesService: CompaniesService,
+    private readonly jwtService: JwtService, // 👈 AÑADIDO
+  ) { }
 
   /* ───────── LISTADO ───────── */
 
@@ -65,7 +69,7 @@ export class CompaniesController {
     return company;
   }
 
-  /* ───────── CREAR EMPRESA (DEBUG) ───────── */
+  /* ───────── CREAR EMPRESA (FIX TOKEN) ───────── */
 
   @Post()
   async create(@Req() req, @Body() body) {
@@ -73,7 +77,24 @@ export class CompaniesController {
     console.log('👤 USER:', req.user);
     console.log('📦 BODY:', body);
 
-    return this.companiesService.create(req.user, body);
+    // 👇 LLAMADA A SERVICE (OJO ORDEN)
+    const result = await this.companiesService.create(req.user, body);
+
+    // 👇 NUEVO TOKEN CON ROLE ACTUALIZADO
+    const u = result.user as any;
+
+    const payload = {
+      sub: u.id,
+      role: u.role,
+      companyId: u.companyId,
+      branchId: null,
+    };
+    const token = this.jwtService.sign(payload);
+
+    return {
+      token,
+      user: result.user,
+    };
   }
 
   /* ───────── BORRADO DEFINITIVO (TEST) ───────── */
