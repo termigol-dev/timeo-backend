@@ -30,12 +30,15 @@ import { PublicController } from './branches/public.controller';
     DashboardModule,
     SchedulesModule,
     IncidentsModule,
-    MobileModule, 
+    MobileModule,
     DevicesModule,
     NotificationsModule,
-    ScheduleModule.forRoot(), 
+    ScheduleModule.forRoot(),
     SimulateModule,
-    PublicController,
   ],
+  controllers: [
+    PublicController, // ✅ aquí SÍ
+  ],
+  providers: [],
 })
-export class AppModule {}
+export class AppModule { }
