@@ -37,18 +37,6 @@ export class BranchesController {
     return this.branchesService.findAll(companyId, req.user);
   }
 
-  /* =====================
-       LISTAR SUCURSALES AL CREAR EL PRIMER EMPLEADO
-    ====================== */
-  
-  @Get('public')
-  async getPublicBranches(@Param('companyId') companyId: string) {
-    return this.prisma.branch.findMany({
-      where: { companyId },
-      orderBy: { name: 'asc' },
-    });
-  }
-
 
   /* =====================
      CREAR SUCURSAL

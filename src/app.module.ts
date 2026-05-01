@@ -15,6 +15,7 @@ import { DevicesModule } from './devices/devices.module';
 import { NotificationsModule } from './notifications/notifications.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SimulateModule } from './records/simulate.module';
+import { PublicController } from './branches/public.controller';
 
 @Module({
   imports: [
@@ -34,6 +35,7 @@ import { SimulateModule } from './records/simulate.module';
     NotificationsModule,
     ScheduleModule.forRoot(), 
     SimulateModule,
+    PublicController,
   ],
 })
 export class AppModule {}
