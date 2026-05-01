@@ -83,7 +83,9 @@ async create(@Req() req, @Body() body) {
 
   const payload = {
     sub: u.id,
-    role: result.role,
+    role: req.user.role === Role.SUPERADMIN
+  ? Role.SUPERADMIN
+  : result.role,
     companyId: u.companyId,
     branchId: null,
   };
