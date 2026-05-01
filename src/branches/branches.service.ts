@@ -14,33 +14,53 @@ export class BranchesService {
   /* =====================
      LISTAR SUCURSALES
   ====================== */
-  async findAll(companyId: string, user: any) {
-    if (user.role === Role.SUPERADMIN) {
-      return this.prisma.branch.findMany({
-        where: { companyId },
-        orderBy: { name: 'asc' },
-      });
-    }
+ async findAll(companyId: string, user: any) {
 
-    const membership = await this.prisma.membership.findFirst({
-      where: {
-        companyId,
-        userId: user.id,
-        active: true,
-      },
-    });
+  console.log('🧪 [BRANCHES] companyId recibido:', companyId);
+  console.log('🧪 [BRANCHES] req.user completo:', user);
+  console.log('🧪 [BRANCHES] user.id:', user?.id);
+  console.log('🧪 [BRANCHES] user.role:', user?.role);
 
-    if (!membership) {
-      throw new ForbiddenException(
-        'No tienes acceso a esta empresa',
-      );
-    }
+  if (user.role === Role.SUPERADMIN) {
+    console.log('🟣 [BRANCHES] Acceso como SUPERADMIN');
 
     return this.prisma.branch.findMany({
       where: { companyId },
       orderBy: { name: 'asc' },
     });
   }
+
+  console.log('🔍 [BRANCHES] Buscando membership con:', {
+    companyId,
+    userId: user?.id,
+    active: true,
+  });
+
+  const membership = await this.prisma.membership.findFirst({
+    where: {
+      companyId,
+      userId: user.id,
+      active: true,
+    },
+  });
+
+  console.log('🧪 [BRANCHES] membership encontrada:', membership);
+
+  if (!membership) {
+    console.log('❌ [BRANCHES] NO hay membership → Forbidden');
+
+    throw new ForbiddenException(
+      'No tienes acceso a esta empresa',
+    );
+  }
+
+  console.log('✅ [BRANCHES] Acceso permitido, devolviendo sucursales');
+
+  return this.prisma.branch.findMany({
+    where: { companyId },
+    orderBy: { name: 'asc' },
+  });
+}
 
   /* =====================
      CREAR SUCURSAL
