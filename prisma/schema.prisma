@@ -70,6 +70,10 @@ model User {
   updatedAt     DateTime     @updatedAt
   photo         String?      @db.Text
 
+  acceptedPrivacy   Boolean   @default(false)
+  acceptedPrivacyAt DateTime?
+  privacyVersion    String?
+
   devices     Device[]
   memberships Membership[]
   records     Record[]

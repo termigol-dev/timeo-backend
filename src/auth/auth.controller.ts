@@ -7,11 +7,13 @@ import {
   Req,
 } from '@nestjs/common';
 import { AuthService } from './auth.service';
+import { UsersService } from '../users/users.service';
 import { AuthGuard } from '@nestjs/passport';
+import { Param } from '@nestjs/common';
 
 @Controller('auth')
 export class AuthController {
-  constructor(private readonly authService: AuthService) { }
+  constructor(private readonly authService: AuthService, private readonly usersService: UsersService) { }
   @Get('me')
   @UseGuards(AuthGuard('jwt'))
   getMe(@Req() req) {
@@ -37,5 +39,8 @@ export class AuthController {
     return this.authService.register(body);
   }
 
-
+  @Post(':id/accept-privacy')
+  async acceptPrivacy(@Param('id') id: string) {
+    return this.authService.acceptPrivacy(id);
+  }
 }

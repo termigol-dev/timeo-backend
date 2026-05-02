@@ -36,6 +36,17 @@ export class AuthService {
       throw new UnauthorizedException('Credenciales incorrectas');
     }
 
+    // 🔐 CHECK PRIVACIDAD (AQUÍ)
+    if (!user.acceptedPrivacy || user.privacyVersion !== 'v1.0') {
+      console.log('⚠️ PRIVACY NOT ACCEPTED');
+
+      return {
+        requiresPrivacyAcceptance: true,
+        userId: user.id,
+        email: user.email,
+      };
+    }
+
     const membership = user.memberships
       .sort((a, b) => {
         const priority = {
@@ -87,25 +98,36 @@ export class AuthService {
     return response;
   }
 
- async getMe(userId: string) {
-  const membership = await this.prisma.membership.findFirst({
-    where: { userId, active: true },
-    include: { company: true },
-  });
+  async acceptPrivacy(userId: string) {
+    return this.prisma.user.update({
+      where: { id: userId },
+      data: {
+        acceptedPrivacy: true,
+        acceptedPrivacyAt: new Date(),
+        privacyVersion: 'v1.0',
+      },
+    });
+  }
 
-  const user = await this.prisma.user.findUnique({
-    where: { id: userId },
-  });
+  async getMe(userId: string) {
+    const membership = await this.prisma.membership.findFirst({
+      where: { userId, active: true },
+      include: { company: true },
+    });
 
-  return {
-    id: user.id,
-    name: user.name,
-    email: user.email,
-    companyId: membership?.companyId || null,
-    companyName: membership?.company?.commercialName || null,
-    role: membership?.role || 'NO_ROLE',
-  };
-}
+    const user = await this.prisma.user.findUnique({
+      where: { id: userId },
+    });
+
+    return {
+      id: user.id,
+      name: user.name,
+      email: user.email,
+      companyId: membership?.companyId || null,
+      companyName: membership?.company?.commercialName || null,
+      role: membership?.role || 'NO_ROLE',
+    };
+  }
 
   async register(body: any) {
     const user = await this.usersService.registerCompanyAdmin(body);
