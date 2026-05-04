@@ -13,6 +13,11 @@
     "incremental": true,
     "skipLibCheck": true,
 
-    "strict": false
+    "strict": false,
+
+    // 🔥 AÑADE ESTO (CLAVE)
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "strictPropertyInitialization": false
   }
 }

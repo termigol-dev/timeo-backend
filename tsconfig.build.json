@@ -6,10 +6,18 @@
     "rootDir": "src",
     "declaration": false,
     "sourceMap": false,
+
     "emitDecoratorMetadata": true,
     "experimentalDecorators": true,
     "allowSyntheticDefaultImports": true,
-    "skipLibCheck": true
+
+    "skipLibCheck": true,
+
+    // 🔥 AÑADE ESTO
+    "strict": false,
+    "noImplicitAny": false,
+    "strictNullChecks": false,
+    "strictPropertyInitialization": false
   },
   "include": ["src/**/*.ts"],
   "exclude": ["node_modules", "dist", "test", "prisma"]
