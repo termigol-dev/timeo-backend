@@ -13,7 +13,7 @@
 
     "skipLibCheck": true,
 
-    // 🔥 AÑADE ESTO
+  
     "strict": false,
     "noImplicitAny": false,
     "strictNullChecks": false,
