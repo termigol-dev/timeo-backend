@@ -6,6 +6,11 @@ import { JwtStrategy } from './strategies/jwt.strategy';
 import { PrismaModule } from '../prisma/prisma.module';
 import { UsersModule } from '../users/users.module';
 
+// 🔥 VALIDACIÓN GLOBAL
+if (!process.env.JWT_SECRET) {
+  throw new Error('❌ JWT_SECRET no definido en entorno');
+}
+
 @Module({
   imports: [
     UsersModule,

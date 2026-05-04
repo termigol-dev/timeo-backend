@@ -3,12 +3,29 @@ import { Resend } from 'resend';
 
 @Injectable()
 export class MailService {
-  private resend = new Resend(process.env.RESEND_API_KEY);
+
+  private resend: Resend | null = null;
+
+  constructor() {
+    if (!process.env.RESEND_API_KEY) {
+      console.log("⚠️ RESEND_API_KEY no configurada, email desactivado");
+      this.resend = null;
+    } else {
+      this.resend = new Resend(process.env.RESEND_API_KEY);
+    }
+  }
 
   async sendInvite(email: string, password: string) {
+
+    // 🔥 evitar crash si no hay API key
+    if (!this.resend) {
+      console.log("📭 Email no enviado (sin API key)");
+      return true;
+    }
+
     try {
       const response = await this.resend.emails.send({
-        from: 'Timeo <onboarding@resend.dev>', // luego puedes cambiarlo
+        from: 'Timeo <onboarding@resend.dev>',
         to: email,
         subject: 'Acceso a Timeo',
         html: `
@@ -29,7 +46,7 @@ export class MailService {
           </p>
 
           <p>
-            Desde tu móvil puedes añadir la app a tu pantalla de inicio para usarla como una app normal 📱
+            Desde tu móvil puedes añadir la app a tu pantalla de inicio 📱
           </p>
         `,
       });
@@ -39,7 +56,7 @@ export class MailService {
 
     } catch (error) {
       console.error('❌ Error enviando email:', error);
-      throw error;
+      return false; // 👈 importante: NO romper flujo
     }
   }
 }
