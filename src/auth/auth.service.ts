@@ -37,7 +37,7 @@ export class AuthService {
     }
 
     // 🔐 CHECK PRIVACIDAD (AQUÍ)
-    /*if (!user.acceptedPrivacy || user.privacyVersion !== 'v1.0') {
+    if (!user.acceptedPrivacy || user.privacyVersion !== 'v1.0') {
       console.log('⚠️ PRIVACY NOT ACCEPTED');
 
       return {
@@ -45,7 +45,7 @@ export class AuthService {
         userId: user.id,
         email: user.email,
       };
-    }*/
+    }
 
     const membership = user.memberships
       .sort((a, b) => {
