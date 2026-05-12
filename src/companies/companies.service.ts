@@ -5,6 +5,7 @@ import {
 } from '@nestjs/common';
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
+import { getPlanConfig } from '../common/plan.utils';
 
 @Injectable()
 export class CompaniesService {
@@ -23,7 +24,7 @@ export class CompaniesService {
       where: {
         memberships: {
           some: {
-            userId: user.id,
+            userId: user.sub, // 🔥 IMPORTANTE
             active: true,
           },
         },
@@ -32,9 +33,27 @@ export class CompaniesService {
     });
   }
 
+  /* ───────── OBTENER MI EMPRESA (CLAVE) ───────── */
+
+  async getMyCompany(user: any) {
+
+    console.log('🔍 TOKEN companyId:', user.companyId);
+
+    const company = await this.prisma.company.findMany();
+
+    console.log('🏢 TODAS LAS EMPRESAS EN DB:', company);
+
+    return company;
+  }
+
+
+
   /* ───────── PERFIL ───────── */
 
   async findOne(companyId: string, user: any) {
+
+    console.log('🧪 USER EN FINDONE:', user);
+
     const company = await this.prisma.company.findUnique({
       where: { id: companyId },
     });
@@ -43,16 +62,14 @@ export class CompaniesService {
       throw new NotFoundException('Empresa no encontrada');
     }
 
-    // SUPERADMIN → acceso total
     if (user.role === Role.SUPERADMIN) {
       return company;
     }
 
-    // ADMIN_EMPRESA → comprobar membership
     const membership = await this.prisma.membership.findFirst({
       where: {
         companyId,
-        userId: user.id,
+        userId: user.sub, // 🔥 IMPORTANTE
         active: true,
       },
     });
@@ -66,163 +83,172 @@ export class CompaniesService {
     return company;
   }
 
-  /* ───────── ACTUALIZAR EMPRESA (NUEVO) ───────── */
+  async getPlanUsage(user: any) {
 
-  async update(
-    companyId: string,
-    user: any,
-    data: any,
-  ) {
     const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
+      where: { id: user.companyId },
     });
 
     if (!company) {
       throw new NotFoundException('Empresa no encontrada');
     }
 
-    // Permisos base
-    if (
-      user.role !== Role.SUPERADMIN &&
-      user.role !== Role.ADMIN_EMPRESA
-    ) {
-      throw new ForbiddenException();
-    }
+    const config = getPlanConfig(company.plan);
 
-    // ADMIN_EMPRESA solo su empresa
-    if (
-      user.role === Role.ADMIN_EMPRESA &&
-      user.companyId !== companyId
-    ) {
-      throw new ForbiddenException(
-        'No tienes permiso para editar esta empresa',
-      );
-    }
-
-    // Payload seguro
-    const payload: any = {
-      commercialName: data.commercialName,
-      address: data.address,
-      plan: data.plan || company.plan || 'FREE',
-      logoUrl: data.logoUrl ?? company.logoUrl ?? null, // 👈 añadido
-    };
-
-    // 🔐 SOLO SUPERADMIN
-    if (user.role === Role.SUPERADMIN) {
-      payload.legalName = data.legalName;
-      payload.nif = data.nif;
-    }
-
-    return this.prisma.company.update({
-      where: { id: companyId },
-      data: payload,
-    });
-  }
-
-
-  /* ───────── CREAR EMPRESA ───────── */
-
-  async create(user: any, data: any) {
-
-  const company = await this.prisma.company.create({
-    data: {
-      legalName: data.legalName,
-      commercialName: data.commercialName,
-      nif: data.nif,
-      address: data.address,
-      plan: data.plan || 'FREE',
-      logoUrl: data.logoUrl || null,
-      active: true,
-    },
-  });
-
-  const branch = await this.prisma.branch.create({
-    data: {
-      name: data.branchName || 'Principal',
-      address: data.branchAddress || data.address,
-      companyId: company.id,
-      active: true,
-    },
-  });
-
-  await this.prisma.membership.create({
-    data: {
-      userId: user.id,
-      companyId: company.id,
-      role: Role.ADMIN_EMPRESA,
-      active: true,
-    },
-  });
-
-  return {
-    company,
-    user,
-    role: Role.ADMIN_EMPRESA,
-  };
-}
-
-  /* ───────── BORRADO DEFINITIVO ───────── */
-
-  async remove(companyId: string) {
-    console.log('🗑️ BORRANDO EMPRESA', companyId);
-
-    const company = await this.prisma.company.findUnique({
-      where: { id: companyId },
-      include: {
-        branches: true,
-        memberships: {
-          include: {
-            user: {
-              include: {
-                memberships: true,
-              },
-            },
-          },
-        },
+    const employeeCount = await this.prisma.membership.count({
+      where: {
+        companyId: user.companyId,
+        active: true,
       },
     });
 
-    if (!company) {
-      throw new NotFoundException('Empresa no encontrada');
-    }
+    const branchCount = await this.prisma.branch.count({
+      where: {
+        companyId: user.companyId,
+      },
+    });
 
-    return this.prisma.$transaction(async tx => {
-      console.log('➡️ Borrando sucursales:', company.branches.length);
+    return {
+      company: {
+        id: company.id,
+        name:
+          company.commercialName ||
+          company.legalName,
+        legalName: company.legalName,
+        plan: company.plan,
+        subscriptionStatus:
+          company.subscriptionStatus,
+        billingPeriod:
+          company.billingPeriod ||
+          'MONTHLY',
+        renewalDate:
+          company.subscriptionRenewalDate ||
+          '12 junio 2026',
+        currentPrice: 61,
+        paymentMethod: {
+          brand: 'visa',
+          last4: '4242',
+        },
+        trialEnd:
+          company.trialEnd,
+      },
+      employees: {
+        used: employeeCount,
+        limit: config.employees,
+      },
+      branches: {
+        used: branchCount,
+        limit: config.branches,
+      },
+    };
+  }
 
-      await tx.branch.deleteMany({
-        where: { companyId },
-      });
+  /* ───────── UPDATE ───────── */
 
-      console.log('➡️ Procesando memberships:', company.memberships.length);
+  async update(companyId: string, user: any, data: any) {
 
-      for (const membership of company.memberships) {
-        const user = membership.user;
+    return this.prisma.$transaction(async (tx) => {
 
-        const otherMemberships = user.memberships.filter(
-          m => m.companyId !== companyId && m.active,
-        );
-
-        await tx.membership.delete({
-          where: { id: membership.id },
-        });
-
-        if (otherMemberships.length === 0) {
-          await tx.user.update({
-            where: { id: user.id },
-            data: { active: false },
-          });
-        }
-      }
-
-      console.log('➡️ Borrando empresa');
-
-      await tx.company.delete({
+      const company = await tx.company.findUnique({
         where: { id: companyId },
       });
 
-      console.log('✅ Empresa borrada');
+      if (!company) {
+        throw new NotFoundException('Empresa no encontrada');
+      }
 
-      return { success: true };
+      if (
+        user.role !== Role.SUPERADMIN &&
+        user.role !== Role.ADMIN_EMPRESA
+      ) {
+        throw new ForbiddenException();
+      }
+
+      if (
+        user.role === Role.ADMIN_EMPRESA &&
+        user.companyId !== companyId
+      ) {
+        throw new ForbiddenException();
+      }
+
+      const payload: any = {
+        commercialName: data.commercialName,
+        address: data.address,
+        plan: data.plan || company.plan || 'FREE',
+        logoUrl: data.logoUrl ?? company.logoUrl ?? null,
+      };
+
+      if (user.role === Role.SUPERADMIN) {
+        payload.legalName = data.legalName;
+        payload.nif = data.nif;
+      }
+
+      return tx.company.update({
+        where: { id: companyId },
+        data: payload,
+      });
+
+    });
+  }
+
+  /* ───────── CREATE ───────── */
+
+  async create(user: any, data: any) {
+
+    return this.prisma.$transaction(async (tx) => {
+
+      const company = await tx.company.create({
+        data: {
+          legalName: data.legalName,
+          commercialName: data.commercialName,
+          nif: data.nif,
+          address: data.address,
+          plan: data.plan || 'BASIC',
+          logoUrl: data.logoUrl || null,
+          active: true,
+
+          trialStart: new Date(),
+
+          trialEnd: new Date(
+            Date.now() + 14 * 24 * 60 * 60 * 1000,
+          ),
+
+          subscriptionStatus: 'TRIAL' as any,
+        },
+      });
+
+      await tx.branch.create({
+        data: {
+          name: data.branchName || 'Principal',
+          address:
+            data.branchAddress || data.address,
+
+          companyId: company.id,
+          active: true,
+        },
+      });
+
+      await tx.membership.create({
+        data: {
+          userId: user.id,
+          companyId: company.id,
+          role: Role.ADMIN_EMPRESA,
+          active: true,
+        },
+      });
+
+      return {
+        company,
+        role: Role.ADMIN_EMPRESA,
+      };
+
+    });
+  }
+  /* ───────── DELETE ───────── */
+
+  async remove(companyId: string) {
+    return this.prisma.company.delete({
+      where: { id: companyId },
     });
   }
 }

@@ -16,11 +16,22 @@ model Company {
   legalName      String
   commercialName String
   address        String
-  plan           String
+  plan           String?      @default("BASIC")
   logoUrl        String?      @db.Text
   active         Boolean      @default(true)
   createdAt      DateTime     @default(now())
   updatedAt      DateTime     @updatedAt
+
+  trialStart          DateTime?
+  trialEnd            DateTime?
+  subscriptionStatus  SubscriptionStatus?
+  phone               String?
+
+  billingPeriod               String?
+  subscriptionRenewalDate     DateTime?
+
+  stripeCustomerId            String?
+  stripeSubscriptionId        String?
 
   branches    Branch[]
   memberships Membership[]
@@ -69,6 +80,7 @@ model User {
   createdAt     DateTime     @default(now())
   updatedAt     DateTime     @updatedAt
   photo         String?      @db.Text
+  phone         String?
 
   acceptedPrivacy   Boolean   @default(false)
   acceptedPrivacyAt DateTime?
@@ -303,4 +315,17 @@ enum DevicePlatform {
   WEB
   ANDROID
   IOS
+}
+
+enum SubscriptionStatus {
+  TRIAL
+  ACTIVE
+  PAST_DUE
+  CANCELED
+}
+
+enum Plan {
+  BASIC
+  PRO
+  BUSINESS
 }

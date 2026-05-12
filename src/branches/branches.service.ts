@@ -6,6 +6,7 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 import { randomUUID } from 'crypto';
+import { getPlanConfig } from '../common/plan.utils';
 
 @Injectable()
 export class BranchesService {
@@ -66,35 +67,59 @@ export class BranchesService {
      CREAR SUCURSAL
   ====================== */
   async create(
-    companyId: string,
-    user: any,
-    data: { name: string; address?: string },
-  ) {
-    if (user.role !== Role.SUPERADMIN) {
-      const membership = await this.prisma.membership.findFirst({
-        where: {
-          companyId,
-          userId: user.id,
-          active: true,
-        },
-      });
-
-      if (!membership) {
-        throw new ForbiddenException(
-          'No tienes acceso a esta empresa',
-        );
-      }
-    }
-
-    return this.prisma.branch.create({
-      data: {
-        name: data.name,
-        address: data.address,
-        active: true,
+  companyId: string,
+  user: any,
+  data: { name: string; address?: string },
+) {
+  if (user.role !== Role.SUPERADMIN) {
+    const membership = await this.prisma.membership.findFirst({
+      where: {
         companyId,
+        userId: user.id,
+        active: true,
       },
     });
+
+    if (!membership) {
+      throw new ForbiddenException(
+        'No tienes acceso a esta empresa',
+      );
+    }
   }
+
+  /* 🔥 LÍMITE POR PLAN (AQUÍ VA) */
+
+  const company = await this.prisma.company.findUnique({
+    where: { id: companyId },
+  });
+
+  if (!company) {
+    throw new NotFoundException('Empresa no encontrada');
+  }
+
+  const config = getPlanConfig(company.plan);
+
+  const branchCount = await this.prisma.branch.count({
+    where: { companyId },
+  });
+
+  if (branchCount >= config.branches) {
+    throw new ForbiddenException(
+      `Tu plan ${company.plan} permite máximo ${config.branches} sucursales`,
+    );
+  }
+
+  /* 🔥 CREACIÓN NORMAL */
+
+  return this.prisma.branch.create({
+    data: {
+      name: data.name,
+      address: data.address,
+      active: true,
+      companyId,
+    },
+  });
+}
 
   /* =====================
      ACTIVAR / DESACTIVAR

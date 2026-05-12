@@ -18,6 +18,7 @@ import { NotificationsModule } from './notifications/notifications.module';
 import { ScheduleModule } from '@nestjs/schedule';
 import { SimulateModule } from './records/simulate.module';
 import { PublicController } from './branches/public.controller';
+import { BillingModule } from './billing/billing.module';
 
 @Module({
   imports: [
@@ -41,6 +42,7 @@ import { PublicController } from './branches/public.controller';
     NotificationsModule,
     ScheduleModule.forRoot(),
     SimulateModule,
+    BillingModule,
   ],
   controllers: [PublicController],
   providers: [],

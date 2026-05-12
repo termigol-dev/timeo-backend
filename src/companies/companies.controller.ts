@@ -15,16 +15,33 @@ import { JwtGuard } from '../auth/guards/jwt.guard';
 import { RolesGuard } from '../auth/guards/roles.guard';
 import { Roles } from '../auth/decorators/roles.decorator';
 import { Role } from '@prisma/client';
-import { JwtService } from '@nestjs/jwt'; // 👈 AÑADIDO
+import { PlanGuard } from '../auth/guards/plan.guard';
+import { Plan } from '../auth/decorators/plan.decorator';
 
 @Controller('companies')
 @UseGuards(JwtGuard, RolesGuard)
 export class CompaniesController {
   constructor(
     private readonly companiesService: CompaniesService,
-    private readonly jwtService: JwtService, // 👈 AÑADIDO
-  ) { }
+  ) {}
+   
+  /* ───────── TEST PLAN PRO (CLAVE) ───────── */
 
+  @Get('test-pro')
+  @UseGuards(JwtGuard, PlanGuard)
+  @Plan('PRO')
+  test(@Req() req) {
+   return { ok: true };
+  }
+  
+  /* ─────────SABER PLAN ───────── */
+  
+  @Get('plan-usage')
+  @UseGuards(JwtGuard)
+  getPlanUsage(@Req() req) {
+   return this.companiesService.getPlanUsage(req.user);
+  }
+  
   /* ───────── LISTADO ───────── */
 
   @Get()
@@ -33,21 +50,7 @@ export class CompaniesController {
     return this.companiesService.findAll(req.user);
   }
 
-  /* ───────── PERFIL EMPRESA ───────── */
-
-  @Get(':id')
-  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
-  async findOne(@Param('id') id: string, @Req() req) {
-    const company = await this.companiesService.findOne(id, req.user);
-
-    if (!company) {
-      throw new NotFoundException('Empresa no encontrada');
-    }
-
-    return company;
-  }
-
-  /* ───────── ACTUALIZAR EMPRESA ───────── */
+    /* ───────── ACTUALIZAR EMPRESA ───────── */
 
   @Patch(':id')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
@@ -69,25 +72,38 @@ export class CompaniesController {
     return company;
   }
 
-  /* ───────── CREAR EMPRESA (FIX TOKEN) ───────── */
+  
+
+  /* ───────── CREAR EMPRESA ───────── */
+  
   @Post()
-async create(@Req() req, @Body() body) {
-  console.log('🔥 POST /companies HIT');
-  console.log('👤 USER:', req.user);
-  console.log('📦 BODY:', body);
+  @UseGuards(JwtGuard)
+  async create(@Req() req, @Body() body) {
+    const result = await this.companiesService.create(req.user, body);
+    return result.company;
+  }
 
-  const result = await this.companiesService.create(req.user, body);
-
-  console.log('🧪 RESULT CREATE COMPANY:', result);
-
-  return result.company;
-}
-
-  /* ───────── BORRADO DEFINITIVO (TEST) ───────── */
+  /* ───────── BORRADO ───────── */
 
   @Delete(':id')
   @Roles(Role.SUPERADMIN)
   async remove(@Param('id') id: string) {
     return this.companiesService.remove(id);
   }
+
+  /* ───────── PERFIL EMPRESA ───────── */
+
+  @Get(':id')
+  @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
+  async findOne(@Param('id') id: string, @Req() req) {
+    const company = await this.companiesService.findOne(id, req.user);
+
+    if (!company) {
+      throw new NotFoundException('Empresa no encontrada');
+    }
+
+    return company;
+  }
+
+ 
 }

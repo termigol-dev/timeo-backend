@@ -10,6 +10,8 @@ import { PrismaService } from '../prisma/prisma.service';
 import { Role } from '@prisma/client';
 import * as bcrypt from 'bcryptjs';
 import { MailService } from '../mail/mail.service';
+import { PLAN_LIMITS } from '../common/plan-limits';
+import { getPlanConfig } from '../common/plan.utils';
 
 /* ───────── CONFIG ───────── */
 const SUPERADMIN_EMAIL =
@@ -178,125 +180,154 @@ export class UsersService {
 
   /* ───────── CREAR / REACTIVAR USUARIO ───────── */
 
-  async createInCompany(
-    requestUser: any,
-    companyId: string,
-    body: any,
+ async createInCompany(
+  requestUser: any,
+  companyId: string,
+  body: any,
+) {
+
+  this.ensureCompanyAccess(requestUser, companyId);
+
+  /* ────── 🔒 LÍMITE POR PLAN ────── */
+
+
+const company = await this.prisma.company.findUnique({
+  where: { id: companyId },
+});
+
+if (!company) {
+  throw new ForbiddenException('Empresa no encontrada');
+}
+
+const config = getPlanConfig(company.plan);
+
+const userCount = await this.prisma.membership.count({
+  where: {
+    companyId,
+    active: true,
+  },
+});
+
+if (userCount >= config.employees) {
+  throw new ForbiddenException(
+    `Tu plan ${company.plan} permite máximo ${config.employees} empleados`,
+  );
+}
+  /* ────── LÓGICA EXISTENTE ────── */
+
+  let finalBranchId = body.branchId;
+
+  if (requestUser.role === Role.ADMIN_SUCURSAL) {
+    finalBranchId = requestUser.branchId;
+  }
+
+  if (
+    body.role !== Role.ADMIN_EMPRESA &&
+    !finalBranchId
   ) {
-    this.ensureCompanyAccess(requestUser, companyId);
+    throw new ForbiddenException(
+      'La sucursal es obligatoria',
+    );
+  }
 
-    let finalBranchId = body.branchId;
-
-    if (requestUser.role === Role.ADMIN_SUCURSAL) {
-      finalBranchId = requestUser.branchId;
-    }
-
-    if (
-      body.role !== Role.ADMIN_EMPRESA &&
-      !finalBranchId
-    ) {
-      throw new ForbiddenException(
-        'La sucursal es obligatoria',
-      );
-    }
-
-    /* ────── REACTIVAR USUARIO ────── */
-    if (body.reactivateUserId) {
-      const membership =
-        await this.prisma.membership.findFirst({
-          where: {
-            userId: body.reactivateUserId,
-            companyId,
-          },
-        });
-
-      if (!membership) {
-        throw new NotFoundException(
-          'No existe relación previa con esta empresa',
-        );
-      }
-
-      await this.prisma.membership.update({
-        where: { id: membership.id },
-        data: {
-          active: true,
-          branchId: finalBranchId,
-          role: body.role ?? membership.role,
+  /* ────── REACTIVAR USUARIO ────── */
+  if (body.reactivateUserId) {
+    const membership =
+      await this.prisma.membership.findFirst({
+        where: {
+          userId: body.reactivateUserId,
+          companyId,
         },
       });
 
-      return {
-        reactivated: true,
-        userId: body.reactivateUserId,
-      };
-    }
-
-    /* ────── EMAIL DUPLICADO ────── */
-    if (body.email) {
-      const existingEmailUser =
-        await this.prisma.user.findFirst({
-          where: { email: body.email },
-        });
-
-      if (existingEmailUser) {
-        throw new ForbiddenException({
-          code: 'EMAIL_EXISTS',
-          message:
-            `Este email ya existe. Contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
-        });
-      }
-    }
-
-    /* ────── DNI DUPLICADO ────── */
-    if (body.dni) {
-      const existingUser =
-        await this.prisma.user.findFirst({
-          where: { dni: body.dni },
-        });
-
-      if (existingUser) {
-        throw new ForbiddenException({
-          code: 'DNI_EXISTS',
-          message:
-            `Este DNI ya existe. Contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
-        });
-      }
-    }
-
-    /* ────── PASSWORD OBLIGATORIA ────── */
-    if (!body.password || body.password.length < 6) {
-      throw new ForbiddenException(
-        'La contraseña es obligatoria y debe tener al menos 6 caracteres',
+    if (!membership) {
+      throw new NotFoundException(
+        'No existe relación previa con esta empresa',
       );
     }
 
-    const passwordHash = await bcrypt.hash(body.password, 10);
-
-    const user = await this.prisma.user.create({
+    await this.prisma.membership.update({
+      where: { id: membership.id },
       data: {
-        name: body.name,
-        firstSurname: body.firstSurname,
-        secondSurname: body.secondSurname || null,
-        dni: body.dni,
-        email: body.email,
-        password: passwordHash,
         active: true,
-        memberships: {
-          create: {
-            companyId,
-            branchId: finalBranchId ?? null,
-            role: body.role ?? Role.EMPLEADO,
-            active: true,
-          },
-        },
+        branchId: finalBranchId,
+        role: body.role ?? membership.role,
       },
     });
 
     return {
-      id: user.id,
-      email: user.email,
+      reactivated: true,
+      userId: body.reactivateUserId,
     };
   }
+
+  /* ────── EMAIL DUPLICADO ────── */
+  if (body.email) {
+    const existingEmailUser =
+      await this.prisma.user.findFirst({
+        where: { email: body.email },
+      });
+
+    if (existingEmailUser) {
+      throw new ForbiddenException({
+        code: 'EMAIL_EXISTS',
+        message:
+          `Este email ya existe. Contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
+      });
+    }
+  }
+
+  /* ────── DNI DUPLICADO ────── */
+  if (body.dni) {
+    const existingUser =
+      await this.prisma.user.findFirst({
+        where: { dni: body.dni },
+      });
+
+    if (existingUser) {
+      throw new ForbiddenException({
+        code: 'DNI_EXISTS',
+        message:
+          `Este DNI ya existe. Contacta con el SuperAdmin: ${SUPERADMIN_EMAIL}`,
+      });
+    }
+  }
+
+  /* ────── PASSWORD OBLIGATORIA ────── */
+  if (!body.password || body.password.length < 6) {
+    throw new ForbiddenException(
+      'La contraseña es obligatoria y debe tener al menos 6 caracteres',
+    );
+  }
+
+  const passwordHash = await bcrypt.hash(body.password, 10);
+
+  const user = await this.prisma.user.create({
+    data: {
+      name: body.name,
+      firstSurname: body.firstSurname,
+      secondSurname: body.secondSurname || null,
+      dni: body.dni,
+      email: body.email,
+      phone: body.phone || null, // 🔥 AÑADIDO
+      password: passwordHash,
+      active: true,
+      memberships: {
+        create: {
+          companyId,
+          branchId: finalBranchId ?? null,
+          role: body.role ?? Role.EMPLEADO,
+          active: true,
+        },
+      },
+    },
+  });
+
+  return {
+    id: user.id,
+    email: user.email,
+  };
+}
 
   /* ───────── LISTADO TODOS LOS EMPLEADOS ───────── */
   async getAllEmployees(requestUser: any) {
