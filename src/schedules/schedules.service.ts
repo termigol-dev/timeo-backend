@@ -582,7 +582,7 @@ export class SchedulesService {
     return { ok: true };
   }
 
-  async deleteException(scheduleId: string, date: string) {
+ async deleteException(scheduleId: string, date: string) {
 
   console.log('🗑️ DELETE EXCEPTION SERVICE', {
     scheduleId,
@@ -590,37 +590,43 @@ export class SchedulesService {
   });
 
   // ======================================================
-  // 📅 BUSCAR POR RANGO DEL DÍA (NO igualdad exacta UTC)
+  // 🔍 CARGAR EXCEPCIONES DEL SCHEDULE
   // ======================================================
 
-  const start = new Date(`${date}T00:00:00`);
-  const end = new Date(`${date}T23:59:59.999`);
-
-  console.log('📅 DELETE RANGE', {
-    start,
-    end,
-  });
-
-  const exception = await this.prisma.scheduleException.findFirst({
+  const exceptions = await this.prisma.scheduleException.findMany({
     where: {
       scheduleId,
-      date: {
-        gte: start,
-        lte: end,
-      },
     },
-    select: { id: true },
+    select: {
+      id: true,
+      date: true,
+    },
   });
 
-  console.log('🧪 EXCEPTION FOUND', exception);
+  console.log('🧪 ALL EXCEPTIONS', exceptions);
+
+  // ======================================================
+  // 📅 COMPARAR POR DÍA CIVIL
+  // ======================================================
+
+  const exception = exceptions.find(e => {
+
+    const exceptionDate = e.date.toISOString().slice(0, 10);
+
+    return exceptionDate === date;
+  });
+
+  console.log('🧪 MATCHED EXCEPTION', exception);
 
   if (!exception) {
+
     console.log('⚠️ NO EXCEPTION FOUND TO DELETE');
+
     return;
   }
 
   // ======================================================
-  // 🔴 1. borrar bloques hijos
+  // 🔴 BORRAR BLOQUES HIJOS
   // ======================================================
 
   await this.prisma.scheduleExceptionBlock.deleteMany({
@@ -632,20 +638,16 @@ export class SchedulesService {
   console.log('🗑️ CHILD BLOCKS DELETED');
 
   // ======================================================
-  // 🔴 2. borrar excepción
+  // 🔴 BORRAR EXCEPCIÓN
   // ======================================================
 
-  const deleted = await this.prisma.scheduleException.deleteMany({
+  const deleted = await this.prisma.scheduleException.delete({
     where: {
-      scheduleId,
-      date: {
-        gte: start,
-        lte: end,
-      },
+      id: exception.id,
     },
   });
 
-  console.log('🗑️ EXCEPTIONS DELETED RESULT', deleted);
+  console.log('🗑️ EXCEPTION DELETED', deleted);
 
   return deleted;
 }
