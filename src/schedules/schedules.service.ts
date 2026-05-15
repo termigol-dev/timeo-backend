@@ -583,33 +583,72 @@ export class SchedulesService {
   }
 
   async deleteException(scheduleId: string, date: string) {
-    console.log('🗑️ DELETE EXCEPTION SERVICE', { scheduleId, date });
 
-    const exception = await this.prisma.scheduleException.findFirst({
-      where: {
-        scheduleId,
-        date: new Date(date),
+  console.log('🗑️ DELETE EXCEPTION SERVICE', {
+    scheduleId,
+    date,
+  });
+
+  // ======================================================
+  // 📅 BUSCAR POR RANGO DEL DÍA (NO igualdad exacta UTC)
+  // ======================================================
+
+  const start = new Date(`${date}T00:00:00`);
+  const end = new Date(`${date}T23:59:59.999`);
+
+  console.log('📅 DELETE RANGE', {
+    start,
+    end,
+  });
+
+  const exception = await this.prisma.scheduleException.findFirst({
+    where: {
+      scheduleId,
+      date: {
+        gte: start,
+        lte: end,
       },
-      select: { id: true },
-    });
+    },
+    select: { id: true },
+  });
 
-    if (!exception) return;
+  console.log('🧪 EXCEPTION FOUND', exception);
 
-    // 🔴 1. borrar bloques hijos
-    await this.prisma.scheduleExceptionBlock.deleteMany({
-      where: {
-        exceptionId: exception.id,
-      },
-    });
-
-    // 🔴 2. borrar excepción
-    return this.prisma.scheduleException.deleteMany({
-      where: {
-        scheduleId,
-        date: new Date(date),
-      },
-    });
+  if (!exception) {
+    console.log('⚠️ NO EXCEPTION FOUND TO DELETE');
+    return;
   }
+
+  // ======================================================
+  // 🔴 1. borrar bloques hijos
+  // ======================================================
+
+  await this.prisma.scheduleExceptionBlock.deleteMany({
+    where: {
+      exceptionId: exception.id,
+    },
+  });
+
+  console.log('🗑️ CHILD BLOCKS DELETED');
+
+  // ======================================================
+  // 🔴 2. borrar excepción
+  // ======================================================
+
+  const deleted = await this.prisma.scheduleException.deleteMany({
+    where: {
+      scheduleId,
+      date: {
+        gte: start,
+        lte: end,
+      },
+    },
+  });
+
+  console.log('🗑️ EXCEPTIONS DELETED RESULT', deleted);
+
+  return deleted;
+}
 
   /* ======================================================
      🔑 MÉTODO CLAVE DEL SISTEMA
