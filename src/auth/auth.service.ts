@@ -60,6 +60,7 @@ export class AuthService {
 
     const payload = {
       sub: user.id,
+      email:user.email,
       role: membership?.role ?? 'NO_ROLE',
       companyId: membership?.companyId ?? null,
       branchId: membership?.branchId ?? null,
