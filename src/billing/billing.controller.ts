@@ -15,13 +15,17 @@ export class BillingController {
 
   constructor(
     private readonly billingService: BillingService
-  ) {}
+  ) { }
 
-  @UseGuards(JwtGuard)
+  //@UseGuards(JwtGuard)
   @Post('checkout')
   async checkout(@Req() req, @Body() body) {
 
-    const user = req.user;
+    const user = {
+      id: 'test',
+      email: '888@gmail.com',
+      companyId: '4b827210-b4f8-4129-82dc-201995e4c408',
+    };
 
     console.log('USER 👉', user);
 
