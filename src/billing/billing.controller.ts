@@ -21,11 +21,7 @@ export class BillingController {
   @Post('checkout')
   async checkout(@Req() req, @Body() body) {
 
-    const user = {
-      id: 'test',
-      email: '888@gmail.com',
-      companyId: '4b827210-b4f8-4129-82dc-201995e4c408',
-    };
+    const user = req.user;
 
     console.log('USER 👉', user);
 
