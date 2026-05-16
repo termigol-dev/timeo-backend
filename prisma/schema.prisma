@@ -11,55 +11,48 @@ datasource db {
 /// COMPANY
 /// ======================
 model Company {
-  id             String       @id @default(uuid())
-  nif            String       @unique
-  legalName      String
-  commercialName String
-  address        String
-  plan           String?      @default("BASIC")
-  logoUrl        String?      @db.Text
-  active         Boolean      @default(true)
-  createdAt      DateTime     @default(now())
-  updatedAt      DateTime     @updatedAt
-
-  trialStart          DateTime?
-  trialEnd            DateTime?
-  subscriptionStatus  SubscriptionStatus?
-  phone               String?
-
-  billingPeriod               String?
-  subscriptionRenewalDate     DateTime?
-
-  stripeCustomerId            String?
-  stripeSubscriptionId        String?
-
-  branches    Branch[]
-  memberships Membership[]
-  records     Record[]
-  incidents   Incident[]
+  id                      String              @id @default(uuid())
+  nif                     String              @unique
+  legalName               String
+  commercialName          String
+  address                 String
+  plan                    String?             @default("BASIC")
+  createdAt               DateTime            @default(now())
+  updatedAt               DateTime            @updatedAt
+  active                  Boolean             @default(true)
+  logoUrl                 String?
+  billingPeriod           String?
+  phone                   String?
+  stripeCustomerId        String?
+  stripeSubscriptionId    String?
+  subscriptionRenewalDate DateTime?
+  subscriptionStatus      SubscriptionStatus?
+  trialEnd                DateTime?
+  trialStart              DateTime?
+  branches                Branch[]
+  incidents               Incident[]
+  memberships             Membership[]
+  records                 Record[]
 }
 
 /// ======================
 /// BRANCH
 /// ======================
 model Branch {
-  id           String  @id @default(uuid())
+  id           String       @id @default(uuid())
   name         String
   address      String
-  active       Boolean @default(true)
-  tabletToken  String? @unique
-  tabletActive Boolean @default(true)
-
-  companyId String
-  company   Company @relation(fields: [companyId], references: [id])
-
-  memberships Membership[]
-  records     Record[]
-  schedules   Schedule[]
-  incidents   Incident[]
-
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  active       Boolean      @default(true)
+  tabletToken  String?      @unique
+  tabletActive Boolean      @default(true)
+  companyId    String
+  createdAt    DateTime     @default(now())
+  updatedAt    DateTime     @updatedAt
+  company      Company      @relation(fields: [companyId], references: [id])
+  incidents    Incident[]
+  memberships  Membership[]
+  records      Record[]
+  schedules    Schedule[]
 
   @@unique([companyId, name])
 }
@@ -68,50 +61,46 @@ model Branch {
 /// USER (GLOBAL)
 /// ======================
 model User {
-  id            String       @id @default(uuid())
-  name          String
-  firstSurname  String
-  secondSurname String?
-  dni           String
-  email         String       @unique
-  password      String
-  photoUrl      String?
-  active        Boolean      @default(true)
-  createdAt     DateTime     @default(now())
-  updatedAt     DateTime     @updatedAt
-  photo         String?      @db.Text
-  phone         String?
-
-  acceptedPrivacy   Boolean   @default(false)
+  id                String       @id @default(uuid())
+  name              String
+  firstSurname      String
+  secondSurname     String?
+  dni               String
+  email             String       @unique
+  password          String
+  photoUrl          String?
+  active            Boolean      @default(true)
+  createdAt         DateTime     @default(now())
+  updatedAt         DateTime     @updatedAt
+  photo             String?
+  acceptedPrivacy   Boolean      @default(false)
   acceptedPrivacyAt DateTime?
   privacyVersion    String?
-
-  devices     Device[]
-  memberships Membership[]
-  records     Record[]
-  schedules   Schedule[]
-  incidents   Incident[]
+  phone             String?
+  devices           Device[]
+  incidents         Incident[]
+  memberships       Membership[]
+  records           Record[]
+  schedules         Schedule[]
 }
 
 /// ======================
 /// MEMBERSHIP (CLAVE)
 /// ======================
 model Membership {
-  id        String   @id @default(uuid())
+  id        String     @id @default(uuid())
   userId    String
   companyId String
   branchId  String?
   role      Role
-  active    Boolean  @default(true)
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
-
-  branch    Branch?  @relation(fields: [branchId], references: [id])
-  company   Company  @relation(fields: [companyId], references: [id])
-  user      User     @relation(fields: [userId], references: [id])
-
-  records   Record[]
+  active    Boolean    @default(true)
+  createdAt DateTime   @default(now())
+  updatedAt DateTime   @updatedAt
   incidents Incident[]
+  branch    Branch?    @relation(fields: [branchId], references: [id])
+  company   Company    @relation(fields: [companyId], references: [id])
+  user      User       @relation(fields: [userId], references: [id])
+  records   Record[]
 
   @@unique([userId, companyId])
 }
@@ -127,44 +116,36 @@ model Record {
   companyId    String
   branchId     String
   createdAt    DateTime   @default(now())
-
+  incidents    Incident[]
   branch       Branch     @relation(fields: [branchId], references: [id])
   company      Company    @relation(fields: [companyId], references: [id])
   membership   Membership @relation(fields: [membershipId], references: [id])
   user         User       @relation(fields: [userId], references: [id])
-
-  incidents    Incident[]
 }
 
 /// ======================
 /// INCIDENTS (INCIDENCIAS / NOTAS)
 /// ======================
 model Incident {
-  id            String       @id @default(uuid())
-
-  type          IncidentType
-  createdBy     IncidentBy
-  response      IncidentResponse @default(PENDING)
-
-  userId        String
-  membershipId  String
-  companyId     String
-  branchId      String
-  recordId      String?
-
-  admitted      Boolean      @default(false)
-
-  expectedAt    DateTime?
-  occurredAt    DateTime     @default(now())
-  note          String?
-
-  createdAt     DateTime     @default(now())
-
-  user        User        @relation(fields: [userId], references: [id])
-  membership  Membership  @relation(fields: [membershipId], references: [id])
-  company     Company     @relation(fields: [companyId], references: [id])
-  branch      Branch      @relation(fields: [branchId], references: [id])
-  record      Record?     @relation(fields: [recordId], references: [id])
+  id           String           @id @default(uuid())
+  type         IncidentType
+  createdBy    IncidentBy
+  response     IncidentResponse @default(PENDING)
+  userId       String
+  membershipId String
+  companyId    String
+  branchId     String
+  recordId     String?
+  admitted     Boolean          @default(false)
+  expectedAt   DateTime?
+  occurredAt   DateTime         @default(now())
+  note         String?
+  createdAt    DateTime         @default(now())
+  branch       Branch           @relation(fields: [branchId], references: [id])
+  company      Company          @relation(fields: [companyId], references: [id])
+  membership   Membership       @relation(fields: [membershipId], references: [id])
+  record       Record?          @relation(fields: [recordId], references: [id])
+  user         User             @relation(fields: [userId], references: [id])
 
   @@index([userId])
   @@index([membershipId])
@@ -177,15 +158,14 @@ model Incident {
 /// DEVICE (DISPOSITIVOS DEL USUARIO)
 /// ======================
 model Device {
-  id        String   @id @default(cuid())
+  id        String         @id @default(cuid())
   userId    String
-  user      User     @relation(fields: [userId], references: [id], onDelete: Cascade)
   platform  DevicePlatform
   token     String
-  endpoint  String   @unique
-  
-  createdAt DateTime @default(now())
-  updatedAt DateTime @updatedAt
+  createdAt DateTime       @default(now())
+  updatedAt DateTime       @updatedAt
+  endpoint  String         @unique
+  user      User           @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
 }
@@ -194,20 +174,16 @@ model Device {
 /// SCHEDULE (HORARIO)
 /// ======================
 model Schedule {
-  id        String   @id @default(uuid())
-  userId    String
-  branchId  String
-
-  validFrom DateTime
-  validTo   DateTime?
-
-  createdAt DateTime @default(now())
-
-  user   User   @relation(fields: [userId], references: [id])
-  branch Branch @relation(fields: [branchId], references: [id])
-
-  shifts Shift[]
-  exceptions  ScheduleException[]
+  id         String              @id @default(uuid())
+  userId     String
+  branchId   String
+  validFrom  DateTime
+  validTo    DateTime?
+  createdAt  DateTime            @default(now())
+  branch     Branch              @relation(fields: [branchId], references: [id])
+  user       User                @relation(fields: [userId], references: [id])
+  exceptions ScheduleException[]
+  shifts     Shift[]
 
   @@index([userId])
   @@index([branchId])
@@ -217,17 +193,15 @@ model Schedule {
 /// SHIFT (TURNO)
 /// ======================
 model Shift {
-  id         String @id @default(uuid())
+  id         String    @id @default(uuid())
   scheduleId String
-
-  weekday    Int    // 1 = lunes ... 7 = domingo
-  weekdays Int[] @default([]) //NUEVO MODELO DE PATRONES
-  startTime  String // "09:00"
-  endTime    String // "13:00"
+  weekday    Int
+  startTime  String
+  endTime    String
   validFrom  DateTime
   validTo    DateTime?
-
-  schedule Schedule @relation(fields: [scheduleId], references: [id])
+  weekdays   Int[]     @default([])
+  schedule   Schedule  @relation(fields: [scheduleId], references: [id])
 
   @@index([scheduleId])
   @@index([weekday])
@@ -236,15 +210,12 @@ model Shift {
 }
 
 model ScheduleException {
-  id         String   @id @default(uuid())
+  id         String                   @id @default(uuid())
   scheduleId String
-
-  date       DateTime
+  date       DateTime                 @db.Date
   type       ScheduleExceptionType
-
-  createdAt  DateTime @default(now())
-
-  schedule   Schedule @relation(fields: [scheduleId], references: [id])
+  createdAt  DateTime                 @default(now())
+  schedule   Schedule                 @relation(fields: [scheduleId], references: [id])
   blocks     ScheduleExceptionBlock[]
 
   @@index([scheduleId])
@@ -252,14 +223,13 @@ model ScheduleException {
 }
 
 model ScheduleExceptionBlock {
-  id           String   @id @default(uuid())
-  exceptionId  String
+  id          String            @id @default(uuid())
+  exceptionId String
+  startTime   String
+  endTime     String
+  deleted     Boolean           @default(false)
+  exception   ScheduleException @relation(fields: [exceptionId], references: [id])
 
-  startTime    String
-  endTime      String
-
-  exception    ScheduleException @relation(fields: [exceptionId], references: [id])
-  deleted      Boolean @default(false)
   @@index([exceptionId])
 }
 
@@ -281,14 +251,14 @@ enum RecordType {
 enum IncidentType {
   IN_EARLY
   IN_LATE
-  OUT_EARLY
   OUT_LATE
   FORGOT_IN
   FORGOT_OUT
   WRONG_IN
+  ADMIN_NOTE
+  OUT_EARLY
   WRONG_OUT
   NO_SHOW
-  ADMIN_NOTE
 }
 
 enum IncidentBy {
@@ -304,11 +274,11 @@ enum IncidentResponse {
 }
 
 enum ScheduleExceptionType {
-  EXTRA_SHIFT    // horas extra
-  MODIFIED_SHIFT // cambia horario habitual
+  EXTRA_SHIFT
+  MODIFIED_SHIFT
+  DAY_OFF
+  VACATION
   SHIFT_OFF
-  DAY_OFF        // no trabaja ese día
-  VACATION       // vacaciones
 }
 
 enum DevicePlatform {

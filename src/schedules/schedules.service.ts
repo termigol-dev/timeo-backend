@@ -504,7 +504,6 @@ export class SchedulesService {
       console.log('🧪 EXCEPTION INPUT', ex);
 
       const exDate = new Date(ex.date);
-      exDate.setHours(0, 0, 0, 0);
 
       // =====================================================
       // 🔴 1. BORRAR SIEMPRE LO QUE HAYA ESE DÍA

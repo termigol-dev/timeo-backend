@@ -1,5 +1,14 @@
-import { Controller, Post, Req, Body } from '@nestjs/common';
+import {
+  Controller,
+  Post,
+  Req,
+  Body,
+  UseGuards,
+} from '@nestjs/common';
+
 import { BillingService } from './billing.service';
+
+import { JwtGuard } from '../auth/guards/jwt.guard';
 
 @Controller('billing')
 export class BillingController {
@@ -8,15 +17,11 @@ export class BillingController {
     private readonly billingService: BillingService
   ) {}
 
+  @UseGuards(JwtGuard)
   @Post('checkout')
   async checkout(@Req() req, @Body() body) {
 
-    // 🔥 FALLBACK TEMPORAL
-    const user = req.user || {
-      id: 'test-user',
-      email: 'test@test.com',
-      companyId: '0cefd24d-a69f-4e16-b6c7-9092aa2d5bbb',
-    };
+    const user = req.user;
 
     console.log('USER 👉', user);
 
