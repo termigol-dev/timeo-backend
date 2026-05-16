@@ -17,7 +17,7 @@ export class BillingController {
     private readonly billingService: BillingService
   ) { }
 
-  //@UseGuards(JwtGuard)
+  @UseGuards(JwtGuard)
   @Post('checkout')
   async checkout(@Req() req, @Body() body) {
 
