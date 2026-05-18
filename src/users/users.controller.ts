@@ -159,7 +159,7 @@ export class UsersController {
   }
 
   /* ───────── CAMBIAR SUCURSAL ───────── */
-  @Patch('companies/:companyId/users/:id/branch')
+  @Patch(':id/branch')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   updateBranch(
     @Req() req,
