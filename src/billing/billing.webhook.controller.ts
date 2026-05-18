@@ -7,18 +7,27 @@ const Stripe = require('stripe');
 @Controller('billing')
 export class BillingWebhookController {
 
-    private stripe = new Stripe(process.env.STRIPE_SECRET_KEY);
+    private stripe = new Stripe(
+        process.env.STRIPE_SECRET_KEY
+    );
 
-    constructor(private prisma: PrismaService) { }
+    constructor(
+        private prisma: PrismaService
+    ) { }
 
     @Post('webhook')
-    async handleWebhook(@Req() req: Request, @Res() res: Response) {
+    async handleWebhook(
+        @Req() req: Request,
+        @Res() res: Response
+    ) {
 
-        const sig = req.headers['stripe-signature'];
+        const sig =
+            req.headers['stripe-signature'];
 
         let event;
 
         try {
+
             console.log(
                 '🔑 WEBHOOK SECRET 👉',
                 process.env.STRIPE_WEBHOOK_SECRET
@@ -28,53 +37,114 @@ export class BillingWebhookController {
                 '🧾 SIGNATURE HEADER 👉',
                 sig
             );
-            event = this.stripe.webhooks.constructEvent(
-                req.body,
-                sig,
-                process.env.STRIPE_WEBHOOK_SECRET
-            );
+
+            event =
+                this.stripe.webhooks.constructEvent(
+                    req.body,
+                    sig,
+                    process.env.STRIPE_WEBHOOK_SECRET
+                );
+
         } catch (err) {
-            console.error('❌ Error webhook:', err.message);
-            return res.status(400).send(`Webhook Error: ${err.message}`);
+
+            console.error(
+                '❌ Error webhook:',
+                err.message
+            );
+
+            return res
+                .status(400)
+                .send(
+                    `Webhook Error: ${err.message}`
+                );
         }
 
-        // 🎯 PAGO COMPLETADO
-        if (event.type === 'checkout.session.completed') {
+        /*
+        |--------------------------------------------------------------------------
+        | CHECKOUT COMPLETED
+        |--------------------------------------------------------------------------
+        */
 
-            const session = event.data.object;
+        if (
+            event.type ===
+            'checkout.session.completed'
+        ) {
 
-            const companyId = session.metadata?.companyId;
-            const plan = session.metadata?.plan;
+            const session =
+                event.data.object;
 
-            console.log('💰 PAGO COMPLETADO PARA:', companyId, plan);
+            const companyId =
+                session.metadata?.companyId;
 
-            await this.prisma.company.update({
-                where: { id: companyId },
-                data: {
-                    plan: plan,
-                    active: true,
-                },
-            });
+            const plan =
+                session.metadata?.plan;
 
-            console.log('✅ EMPRESA ACTUALIZADA A:', plan);
+            const billingPeriod =
+                session.metadata?.billingPeriod;
 
-            // 🔥 ACTUALIZAR EMPRESA
+            console.log(
+                '💰 PAGO COMPLETADO PARA:',
+                companyId,
+                plan
+            );
+
+            console.log(
+                '🧾 SESSION CUSTOMER 👉',
+                session.customer
+            );
+
+            console.log(
+                '🧾 SESSION SUBSCRIPTION 👉',
+                session.subscription
+            );
+
             if (companyId && plan) {
+
                 await this.prisma.company.update({
-                    where: { id: companyId },
+
+                    where: {
+                        id: companyId,
+                    },
+
                     data: {
-                        plan: plan,
-                        subscriptionStatus: 'ACTIVE',
+
+                        plan,
+
+                        active: true,
+
+                        subscriptionStatus:
+                            'ACTIVE',
+
                         trialEnd: null,
+
+                        stripeCustomerId:
+                            session.customer,
+
+                        stripeSubscriptionId:
+                            session.subscription,
+
+                        billingPeriod,
+
+                        subscriptionRenewalDate:
+                            new Date(),
                     },
                 });
 
-                console.log('✅ EMPRESA ACTUALIZADA A:', plan);
+                console.log(
+                    '✅ EMPRESA ACTUALIZADA A:',
+                    plan
+                );
+
             } else {
-                console.log('⚠️ Falta metadata en la sesión');
+
+                console.log(
+                    '⚠️ Falta metadata en la sesión'
+                );
             }
         }
 
-        return res.json({ received: true });
+        return res.json({
+            received: true,
+        });
     }
 }
