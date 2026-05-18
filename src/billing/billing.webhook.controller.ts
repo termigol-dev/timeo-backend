@@ -19,6 +19,15 @@ export class BillingWebhookController {
         let event;
 
         try {
+            console.log(
+                '🔑 WEBHOOK SECRET 👉',
+                process.env.STRIPE_WEBHOOK_SECRET
+            );
+
+            console.log(
+                '🧾 SIGNATURE HEADER 👉',
+                sig
+            );
             event = this.stripe.webhooks.constructEvent(
                 req.body,
                 sig,
