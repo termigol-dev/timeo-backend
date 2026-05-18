@@ -159,7 +159,7 @@ export class UsersController {
   }
 
   /* ───────── CAMBIAR SUCURSAL ───────── */
-  @Patch(':id/branch')
+  @Patch('companies/:companyId/users/:id/branch')
   @Roles(Role.SUPERADMIN, Role.ADMIN_EMPRESA)
   updateBranch(
     @Req() req,
@@ -243,6 +243,7 @@ async sendInvite(
 ) {
   return this.usersService.sendInvite(id, body.password);
 }
+
 
 
   /* ───────── BORRADO DEFINITIVO (SOLO PRUEBAS) ───────── 
