@@ -26,10 +26,19 @@ export class PunchService {
 
     const { userId, companyId, branchId, type } = params;
 
+    // 🔥 VALIDACIÓN CLARA
+    if (!branchId) {
+      throw new BadRequestException(
+        'No puedes fichar porque no tienes una sucursal asignada. Contacta con tu administrador.'
+      );
+    }
+
     const membership = await this.getActiveMembership(userId, companyId, branchId);
 
     const lastRecord = await this.getLastRecord(membership.id);
+
     console.log('🔥 USING punchService');
+
     if (type === RecordType.IN && lastRecord?.type === RecordType.IN) {
       throw new BadRequestException('Already IN');
     }
@@ -71,7 +80,7 @@ export class PunchService {
         },
       });
     }
-    
+
     return record;
   }
 
@@ -234,32 +243,40 @@ export class PunchService {
       .sort((a, b) => a.start - b.start)[0];
   }
 
- private buildShiftDate(baseDate: Date, weekday: number, time: string) {
+  private buildShiftDate(baseDate: Date, weekday: number, time: string) {
 
-  const zone = 'Europe/Madrid';
+    const zone = 'Europe/Madrid';
 
-  const base = DateTime.fromJSDate(baseDate, { zone });
+    const base = DateTime.fromJSDate(baseDate, { zone });
 
-  const currentDay = base.weekday; // 1 (lunes) - 7 (domingo)
+    const currentDay = base.weekday;
 
-  let diff = weekday - currentDay;
-  if (diff < 0) diff += 7;
+    let diff = weekday - currentDay;
+    if (diff < 0) diff += 7;
 
-  const [h, m] = time.split(':').map(Number);
+    const [h, m] = time.split(':').map(Number);
 
-  return base
-    .plus({ days: diff })
-    .set({ hour: h, minute: m, second: 0, millisecond: 0 })
-    .toJSDate();
-}
+    return base
+      .plus({ days: diff })
+      .set({ hour: h, minute: m, second: 0, millisecond: 0 })
+      .toJSDate();
+  }
 
   private async getActiveMembership(userId: string, companyId: string, branchId: string) {
+
     const membership = await this.prisma.membership.findFirst({
-      where: { userId, companyId, branchId, active: true },
+      where: {
+        userId,
+        companyId,
+        branchId,
+        active: true,
+      },
     });
 
     if (!membership) {
-      throw new BadRequestException('Usuario no pertenece a esta sucursal');
+      throw new BadRequestException(
+        'Usuario no pertenece a esta sucursal'
+      );
     }
 
     return membership;
