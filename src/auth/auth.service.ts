@@ -6,6 +6,10 @@ import { PrismaService } from '../prisma/prisma.service';
 import { JwtService } from '@nestjs/jwt';
 import { UsersService } from '../users/users.service'; // 👈 AÑADIDO
 import * as bcrypt from 'bcryptjs';
+import {
+  isCompanyOperational,
+  shouldExpireTrial,
+} from '../billing/utils/subscription.utils';
 
 @Injectable()
 export class AuthService {
@@ -111,24 +115,90 @@ export class AuthService {
   }
 
   async getMe(userId: string) {
-    const membership = await this.prisma.membership.findFirst({
-      where: { userId, active: true },
-      include: { company: true },
+  console.log('🔥 GET ME EJECUTÁNDOSE');
+  const membership =
+    await this.prisma.membership.findFirst({
+
+      where: {
+        userId,
+        active: true,
+      },
+
+      include: {
+        company: true,
+      },
     });
 
-    const user = await this.prisma.user.findUnique({
-      where: { id: userId },
+  const user =
+    await this.prisma.user.findUnique({
+      where: {
+        id: userId,
+      },
     });
 
-    return {
-      id: user.id,
-      name: user.name,
-      email: user.email,
-      companyId: membership?.companyId || null,
-      companyName: membership?.company?.commercialName || null,
-      role: membership?.role || 'NO_ROLE',
-    };
+  /*
+  |--------------------------------------------------------------------------
+  | AUTO EXPIRE TRIAL
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    membership?.company &&
+    shouldExpireTrial(
+      membership.company
+    )
+  ) {
+
+    await this.prisma.company.update({
+
+      where: {
+        id: membership.company.id,
+      },
+
+      data: {
+        subscriptionStatus:
+          'EXPIRED',
+      },
+    });
+
+    membership.company.subscriptionStatus =
+      'EXPIRED';
   }
+
+  return {
+
+    id: user.id,
+
+    name: user.name,
+
+    email: user.email,
+
+    companyId:
+      membership?.companyId || null,
+
+    companyName:
+      membership?.company
+        ?.commercialName || null,
+
+    role:
+      membership?.role || 'NO_ROLE',
+
+    /*
+    |--------------------------------------------------------------------------
+    | BILLING
+    |--------------------------------------------------------------------------
+    */
+
+    companyStatus:
+      membership?.company
+        ?.subscriptionStatus || null,
+
+    canOperate:
+      isCompanyOperational(
+        membership?.company
+      ),
+  };
+}
 
   async register(body: any) {
     const user = await this.usersService.registerCompanyAdmin(body);
