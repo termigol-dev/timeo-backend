@@ -10,7 +10,7 @@ import { DateTime } from 'luxon';
 @Injectable()
 export class PunchService {
 
-  constructor(private readonly prisma: PrismaService) {}
+  constructor(private readonly prisma: PrismaService) { }
 
   /* ======================================================
    🔥 PUNCH REAL
@@ -55,14 +55,28 @@ export class PunchService {
       branchId,
       membershipId: membership.id,
     });
-
+    console.log('✅ RECORD CREADO', record.id);
     // 🧠 EVALUAR (NUEVA LÓGICA)
-    const incidentType = await this.evaluateSchedule({
-      userId,
-      branchId,
-      date: record.createdAt,
-      type,
-    });
+    let incidentType = null;
+
+    try {
+
+      incidentType = await this.evaluateSchedule({
+        userId,
+        branchId,
+        date: record.createdAt,
+        type,
+      });
+
+      console.log('🧠 INCIDENT TYPE:', incidentType);
+
+    } catch (error) {
+
+      console.error(
+        '❌ ERROR EN evaluateSchedule',
+        error,
+      );
+    }
 
     // 🎯 CREAR INCIDENCIA
     if (incidentType) {
