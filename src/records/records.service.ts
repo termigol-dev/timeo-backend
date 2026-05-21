@@ -5,6 +5,11 @@ import {
 import { PrismaService } from '../prisma/prisma.service';
 import { RecordType } from '@prisma/client';
 import { IncidentsService } from '../incidents/incidents.service';
+import { ForbiddenException } from '@nestjs/common';
+
+import {
+  isCompanyOperational,
+} from '../billing/utils/subscription.utils';
 
 @Injectable()
 export class RecordsService {
@@ -16,56 +21,127 @@ export class RecordsService {
   /* ===============================
      ENTRADA (IN)
   =============================== */
-  async recordIn(
+ async recordIn(
   userId: string,
   companyId: string,
   branchId: string,
 ) {
+
   // 🔑 Membership activa
-  const membership = await this.prisma.membership.findFirst({
-    where: {
-      userId,
-      companyId,
-      branchId,
-      active: true,
-    },
-  });
+  const membership =
+    await this.prisma.membership.findFirst({
+
+      where: {
+        userId,
+        companyId,
+        branchId,
+        active: true,
+      },
+
+      include: {
+        company: true,
+      },
+    });
 
   if (!membership) {
+
     throw new BadRequestException(
       'No tienes acceso a esta sucursal',
     );
+
   }
 
-  const last = await this.prisma.record.findFirst({
-    where: { membershipId: membership.id },
-    orderBy: { createdAt: 'desc' },
-  });
+  /*
+  |--------------------------------------------------------------------------
+  | EMPRESA ACTIVA
+  |--------------------------------------------------------------------------
+  */
+
+  if (
+    !isCompanyOperational(
+      membership.company
+    )
+  ) {
+
+    throw new ForbiddenException(
+      'COMPANY_EXPIRED'
+    );
+
+  }
+
+  const last =
+    await this.prisma.record.findFirst({
+
+      where: {
+        membershipId: membership.id,
+      },
+
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
   if (last?.type === RecordType.IN) {
-    throw new BadRequestException('Ya estás dentro');
+
+    throw new BadRequestException(
+      'Ya estás dentro'
+    );
+
   }
 
   // 🔒 REVALIDACIÓN (anti doble request)
-  const lastCheck = await this.prisma.record.findFirst({
-    where: { membershipId: membership.id },
-    orderBy: { createdAt: 'desc' },
-  });
+  const lastCheck =
+    await this.prisma.record.findFirst({
+
+      where: {
+        membershipId: membership.id,
+      },
+
+      orderBy: {
+        createdAt: 'desc',
+      },
+    });
 
   if (lastCheck?.type === RecordType.IN) {
-    throw new BadRequestException('Ya estás dentro');
+
+    throw new BadRequestException(
+      'Ya estás dentro'
+    );
+
   }
 
   // 📝 Registrar IN
-  const record = await this.prisma.record.create({
-    data: {
-      type: RecordType.IN,
-      user: { connect: { id: userId } },
-      company: { connect: { id: companyId } },
-      branch: { connect: { id: branchId } },
-      membership: { connect: { id: membership.id } },
-    },
-  });
+  const record =
+    await this.prisma.record.create({
+
+      data: {
+        type: RecordType.IN,
+
+        user: {
+          connect: {
+            id: userId,
+          },
+        },
+
+        company: {
+          connect: {
+            id: companyId,
+          },
+        },
+
+        branch: {
+          connect: {
+            id: branchId,
+          },
+        },
+
+        membership: {
+          connect: {
+            id: membership.id,
+          },
+        },
+      },
+    });
 
   return record;
 }
