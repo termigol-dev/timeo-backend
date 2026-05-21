@@ -94,7 +94,10 @@ export class PunchService {
         },
       });
     }
-
+    console.log(
+      '🏁 RETURNING RECORD',
+      record.id,
+    );
     return record;
   }
 
