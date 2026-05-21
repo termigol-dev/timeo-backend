@@ -7,14 +7,15 @@ import {
 } from '@nestjs/common';
 
 import { BillingService } from './billing.service';
-
+import { PrismaService } from '../prisma/prisma.service';
 import { JwtGuard } from '../auth/guards/jwt.guard';
 
 @Controller('billing')
 export class BillingController {
 
   constructor(
-    private readonly billingService: BillingService
+    private readonly billingService: BillingService,
+    private readonly prisma: PrismaService,
   ) { }
 
   @UseGuards(JwtGuard)
@@ -32,6 +33,28 @@ export class BillingController {
       body.plan,
       body.billingPeriod,
       body.withSetup,
+    );
+  }
+
+  @UseGuards(JwtGuard)
+  @Post('portal')
+  async portal(@Req() req) {
+
+    const company =
+      await this.prisma.company.findUnique({
+        where: {
+          id: req.user.companyId,
+        },
+      });
+
+    if (!company?.stripeCustomerId) {
+      throw new Error(
+        'La empresa no tiene cliente Stripe'
+      );
+    }
+
+    return this.billingService.createPortalSession(
+      company.stripeCustomerId
     );
   }
 }

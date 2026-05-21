@@ -220,4 +220,23 @@ export class BillingService {
       throw error;
     }
   }
+
+  async createPortalSession(
+    stripeCustomerId: string,
+  ) {
+
+    const session =
+      await this.stripe.billingPortal.sessions.create({
+
+        customer:
+          stripeCustomerId,
+
+        return_url:
+          'http://localhost:5173/admin/my-profile',
+      });
+
+    return {
+      url: session.url,
+    };
+  }
 }
