@@ -37,7 +37,7 @@ export class PunchService {
 
     const lastRecord = await this.getLastRecord(membership.id);
 
-    console.log('🔥 USING punchService');
+    console.log('🔥 USING punchService 1');
 
     if (type === RecordType.IN && lastRecord?.type === RecordType.IN) {
       throw new BadRequestException('Already IN');
